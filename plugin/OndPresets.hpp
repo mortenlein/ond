@@ -25,4 +25,8 @@ bool presetExists(const std::string &name);
 std::string freeName(const std::string &base);   // "CHAPEL 2", "CHAPEL 3" ... the first not taken
 void openPresetFolder();                   // in Explorer / Finder / the file manager
 
+// the pads learned for Brudd, for every Live set: Documents/Ond/pads.txt (OndShared.hpp PadMap's text)
+std::string loadPadsText();
+void savePadsText(const std::string &text);
+
 } // namespace ond

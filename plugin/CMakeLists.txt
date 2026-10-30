@@ -12,12 +12,13 @@ add_subdirectory(${OND_ROOT}/third_party/DPF ${CMAKE_BINARY_DIR}/dpf)
 dpf_add_plugin(Ond
   TARGETS vst3 clap
   UI_TYPE opengl
+  FILES_COMMON
+      OndPresets.cpp
   FILES_DSP
       OndPlugin.cpp
       ${OND_ROOT}/host/ond_engine.c
   FILES_UI
-      OndUI.cpp
-      OndPresets.cpp)
+      OndUI.cpp)
 
 # (DPF's opengl UI adds its Windows WebView though USE_WEB_VIEW is off: its if() sees the generator expression as
 # true. We have no web view; the file does not build with llvm-mingw's headers. Left out.)

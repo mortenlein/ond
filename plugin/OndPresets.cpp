@@ -168,6 +168,22 @@ std::string freeName(const std::string &base)
     return base;
 }
 
+std::string loadPadsText()
+{
+    std::ifstream f(presetDir().parent_path() / "pads.txt");
+    std::string line, all;
+    while (std::getline(f, line))
+        if (!line.empty() && line[0] != '#')
+            all += line + " ";
+    return all;
+}
+
+void savePadsText(const std::string &text)
+{
+    std::ofstream f(presetDir().parent_path() / "pads.txt", std::ios::trunc);
+    f << "# Ond: Brudd's pads, learned on the screen (breaker=n<note> or c<cc>)\n" << text << "\n";
+}
+
 void openPresetFolder()
 {
 #ifdef _WIN32

@@ -2,7 +2,9 @@
 // Copyright (C) 2026 Morten Lein
 // What the plugin's DSP and its screen share: the sound list and the parameters' order.
 #pragma once
+#include <cstdio>
 #include <cstring>
+#include <string>
 #include <vector>
 
 extern "C" {
@@ -52,9 +54,9 @@ inline const std::vector<Sound> &sounds()
 inline constexpr int FAVOURITES = 8;          // sounds()[0..7]: the baseline eight
 
 // plugin parameters: 0 SOUND, then the engine's controls (0.1's six first: their ids stay), then Brudd's breaker
-// (held: 0 none, 1..16) and what sounds of it (out), then the meter
+// (held: 0 none, 1..16), what sounds of it (out), the last MIDI in (out), then the meter
 inline const std::vector<int> &paramControls()  // parameter index -> control index (-1 SOUND, -2 meter,
-                                                // -3 breaker, -4 breaker out)
+                                                // -3 breaker, -4 breaker out, -5 MIDI in)
 {
     static const std::vector<int> map = [] {
         static const char *const FIRST[] = {"dust", "reverb", "reverb_type", "reverb_size", "delay", "level"};
@@ -79,6 +81,7 @@ inline const std::vector<int> &paramControls()  // parameter index -> control in
         }
         m.push_back(-3);
         m.push_back(-4);
+        m.push_back(-5);
         m.push_back(-2);
         return m;
     }();
@@ -104,15 +107,77 @@ inline int paramOfKey(const char *key)
     return -1;
 }
 inline constexpr int P_SOUND = 0;
-inline int meterParam() { return paramCount() - 1; }
-inline int breakerParam() { return paramCount() - 3; }
-inline int breakerOutParam() { return paramCount() - 2; }
+inline int paramOfCode(int code)            // -2 meter, -3 breaker, -4 breaker out, -5 MIDI in
+{
+    for (int i = paramCount() - 1; i >= 0; --i)
+        if (paramControls()[(size_t)i] == code)
+            return i;
+    return -1;
+}
+inline int meterParam() { return paramOfCode(-2); }
+inline int breakerParam() { return paramOfCode(-3); }
+inline int breakerOutParam() { return paramOfCode(-4); }
+// the last MIDI in (out, for the screen: LEARN, and what arrives): count % 16 * 4096 + channel * 256 + CC 128 + number
+inline int midiInParam() { return paramOfCode(-5); }
 
 // the MPK Mini's pads on channel 10 (docs/controller-mpk-mini.md): bank A (notes 36..43) the hits (Brudd stage 2),
 // bank B (44..51) the breakers, in docs/rhythm-breaks.md's order (the punch-in effects nearest each role):
 // stutter, tape stop, dropout (GATE), crush, half speed, reverse, freeze (a beat held: LOOP 4), echo
 inline constexpr int PAD_B_FIRST = 44;
 inline constexpr int PAD_B[8] = {4, 6, 13, 11, 7, 5, 0, 14};
+
+// pads learned on the screen (LEARN in the BRUDD view): breaker -> the MIDI that plays it, on any channel (Live
+// hands a plugin everything on channel 1): a note 0..127, a CC 128 + number, -1 none. As text, for the plugin's
+// state and Documents/Ond/pads.txt: "4=n44 6=c20" (breaker=note / cc)
+inline constexpr int NBREAK = 16;
+struct PadMap {
+    int code[NBREAK];
+    PadMap() { clear(); }
+    void clear()
+    {
+        for (int &c : code)
+            c = -1;
+    }
+    bool empty() const
+    {
+        for (int c : code)
+            if (c >= 0)
+                return false;
+        return true;
+    }
+    void assign(int breaker, int c)        // one MIDI, one breaker
+    {
+        for (int &k : code)
+            if (k == c)
+                k = -1;
+        if (breaker >= 0 && breaker < NBREAK)
+            code[breaker] = c;
+    }
+    std::string text() const
+    {
+        std::string t;
+        for (int i = 0; i < NBREAK; ++i)
+            if (code[i] >= 0)
+                t += (t.empty() ? "" : " ") + std::to_string(i) + (code[i] < 128 ? "=n" : "=c") + std::to_string(code[i] & 127);
+        return t;
+    }
+    static PadMap parse(const char *s)
+    {
+        PadMap m;
+        int b, v, k;
+        char kind;
+        while (s && std::sscanf(s, " %d=%c%d%n", &b, &kind, &v, &k) == 3) {
+            if (b >= 0 && b < NBREAK && v >= 0 && v < 128 && (kind == 'n' || kind == 'c'))
+                m.assign(b, kind == 'n' ? v : 128 + v);
+            s += k;
+        }
+        return m;
+    }
+};
+inline std::string codeName(int c)         // "NOTE 44", "CC 20"
+{
+    return c < 0 ? std::string() : (c < 128 ? "NOTE " : "CC ") + std::to_string(c & 127);
+}
 
 // EDIT 1..8 change range with the engine: the host sees them as 0..1, mapped onto the engine's range
 inline int editValue(float x, const ond_control_t &c)

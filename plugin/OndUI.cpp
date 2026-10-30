@@ -62,7 +62,7 @@ struct Hit {
     int param;                     // >= 0 a knob; -10 previous, -11 next, -12 the browser, -20 SAVE, -21 SAVE AS;
                                    // the browser: -100 OND, -101 MINE, -200-e an engine, -1000-i a sound,
                                    // -2000-k my preset k, -3000-k delete it, -30 RENAME, -31 the folder;
-                                   // -22 the BRUDD view, -4000-i breaker i's pad
+                                   // -22 the BRUDD view, -4000-i breaker i's pad, -23 LEARN
 };
 
 } // namespace
@@ -77,6 +77,7 @@ public:
         if (sf != 1.0)
             setSize((uint)(W * sf), (uint)(H * sf));
         mine = ond::listPresets();
+        pads = ond::PadMap::parse(ond::loadPadsText().c_str());
     }
 
 protected:
@@ -85,11 +86,22 @@ protected:
         if (index >= vals.size() || vals[index] == value)
             return;
         vals[index] = value;
+        if ((int)index == ond::midiInParam() && learnArmed >= 0) {   // LEARN: the pad just hit is this breaker's
+            pads.assign(learnArmed, (int)value & 255);
+            learnArmed = -1;
+            storePads();
+        }
         repaint();
     }
 
     void stateChanged(const char *key, const char *value) override
     {
+        if (!std::strcmp(key, "pads")) {
+            if (value[0])
+                pads = ond::PadMap::parse(value);
+            repaint();
+            return;
+        }
         if (std::strcmp(key, "preset"))
             return;
         userName = value;                  // (a Live set opened: the preset it had; whether it was changed since
@@ -157,6 +169,19 @@ protected:
                 saveAs();
             } else if (h.param == -22) {
                 bruddView = !bruddView;
+                learning = false, learnArmed = -1;
+            } else if (h.param == -23) {
+                learning = !learning;
+                learnArmed = -1;
+            } else if (h.param <= -4000 && learning) {   // LEARN: arm this breaker; armed again: forget its pad
+                const int i = -4000 - h.param;
+                if (learnArmed == i) {
+                    pads.assign(i, -1);
+                    learnArmed = -1;
+                    storePads();
+                } else {
+                    learnArmed = i;
+                }
             } else if (h.param <= -4000) {
                 padDown = -4000 - h.param;           // held while the button is
                 editParameter((uint32_t)ond::breakerParam(), true);
@@ -333,6 +358,14 @@ private:
         const int c = ond::paramControls()[(size_t)param];
         controlInfo(param, info);
         setInt(param, info.kept ? info.def : ond_preset_value(c, s.engine, s.preset));
+    }
+
+    void storePads()                       // to the plugin (the set keeps it) and for every set
+    {
+        const std::string t = pads.text();
+        setState("pads", t.c_str());
+        ond::savePadsText(t);
+        repaint();
     }
 
     // ---- the player's presets (OndPresets.hpp)
@@ -603,20 +636,40 @@ private:
         const float x0 = 16.f, y0 = 336.f, w = 968.f, h = 348.f;
         fill(x0, y0, w, h, PANEL, 1.f, 6.f);
         pixelText(x0 + 14.f, y0 + 10.f, "BRUDD", DIM);
-        pixelText(x0 + w - 14.f, y0 + 10.f, "HOLD A PAD. LET GO: BACK IN THE GROOVE", FAINT, 1.f, 1);
+        button(x0 + 80.f, y0 + 4.f, 70.f, 26.f, "LEARN", learning, -23);
+        const char *hint = !learning ? "HOLD A PAD. LET GO: BACK IN THE GROOVE"
+                           : learnArmed < 0 ? "CLICK A BREAKER, THEN HIT ITS PAD. CLICK IT TWICE: FORGET"
+                                            : "NOW HIT A PAD ON THE MPK";
+        pixelText(x0 + 164.f, y0 + 10.f, hint, learning ? ACCENT : FAINT);
+        {   // what arrives: so a pad that does nothing can be seen sending
+            const int v = (int)std::lround(vals[(size_t)ond::midiInParam()]);
+            if (v) {
+                char in[48];
+                std::snprintf(in, sizeof in, "IN: CH %d %s", (v / 256) % 16 + 1, ond::codeName(v & 255).c_str());
+                pixelText(x0 + w - 14.f, y0 + 10.f, in, DIM, 1.f, 1);
+            }
+        }
         const int n = ond_breaker_count(), playing = (int)std::lround(vals[(size_t)ond::breakerOutParam()]) - 1;
         const float gap = 10.f, pw = (w - 28.f - 7.f * gap) / 8.f, ph = (h - 50.f - gap) / 2.f;
         for (int i = 0; i < n; ++i) {
             const float px = x0 + 14.f + (pw + gap) * (float)(i % 8), py = y0 + 36.f + (ph + gap) * (float)(i / 8);
-            const bool on = playing == i || padDown == i;
+            const bool on = playing == i || padDown == i, armed = learning && learnArmed == i;
             fill(px, py, pw, ph, on ? ACCENT : KNOB, on ? (playing == i ? 0.85f : 0.4f) : 1.f, 6.f);
+            if (armed) {
+                beginPath();
+                roundedRect(px + 1.f, py + 1.f, pw - 2.f, ph - 2.f, 6.f);
+                strokeColor(ACCENT.r, ACCENT.g, ACCENT.b, 255);
+                strokeWidth(2.f);
+                stroke();
+            }
             pixelText(px + pw / 2.f, py + ph / 2.f - 8.f, ond_breaker_name(i), on ? BG : TEXT, 1.f, 0);
-            for (int k = 0; k < 8; ++k)
-                if (ond::PAD_B[k] == i) {
-                    char tag[8];
-                    std::snprintf(tag, sizeof tag, "PAD %d", k + 1);
-                    pixelText(px + 10.f, py + 8.f, tag, on ? BG : FAINT);
-                }
+            std::string tag = ond::codeName(pads.code[i]);   // its pad: learned, else channel 10's bank B
+            if (pads.empty())
+                for (int k = 0; k < 8; ++k)
+                    if (ond::PAD_B[k] == i)
+                        tag = "CH10 " + std::to_string(ond::PAD_B_FIRST + k);
+            if (!tag.empty())
+                pixelText(px + 10.f, py + 8.f, tag.c_str(), on ? BG : armed || learning ? ACCENT : FAINT);
             hits.push_back({px, py, pw, ph, -4000 - i});
         }
     }
@@ -854,6 +907,9 @@ private:
     bool modified = false, renaming = false, fresh = false;
     int deleteArmed = -1;                  // a preset's delete asked once: the second click deletes
     bool bruddView = false;                // the lower half: the breakers' pads
+    bool learning = false;                 // LEARN on: a click arms a breaker, the next pad hit is its
+    int learnArmed = -1;
+    ond::PadMap pads;                      // the pads learned (Documents/Ond/pads.txt, and the set's)
     int padDown = -1;                      // the pad held with the mouse
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OndUI)

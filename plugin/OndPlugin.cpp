@@ -4,6 +4,7 @@
 // MIDI, at 44.1 kHz, resampled to the host's rate. The firmware keeps its state in globals: one instance plays,
 // a second one in the same process stays silent (gOwner) rather than corrupting the first.
 #include "DistrhoPlugin.hpp"
+#include "OndPresets.hpp"
 #include "OndShared.hpp"
 #include "Resampler.hpp"
 #include <atomic>
@@ -19,7 +20,7 @@ std::atomic<void *> gOwner{nullptr};
 class OndPlugin : public Plugin {
 public:
     OndPlugin()
-        : Plugin((uint32_t)ond::paramCount(), 0, 1),
+        : Plugin((uint32_t)ond::paramCount(), 0, 2),
           values(new std::atomic<float>[(size_t)ond::paramCount()]),
           dirty(new std::atomic<bool>[(size_t)ond::paramCount()]),
           touched(new std::atomic<bool>[(size_t)ond::paramCount()])
@@ -30,7 +31,8 @@ public:
             values[i] = p.ranges.def;
             dirty[i] = touched[i] = false;
         }
-    }
+        setPads(ond::PadMap::parse(ond::loadPadsText().c_str()));   // the pads learned (every set's, until a
+    }                                                                 // set brings its own)
 
     ~OndPlugin() override { release(); }
 
@@ -47,20 +49,24 @@ protected:
 
     // "preset": the player's preset loaded on the screen (its name; "" a factory sound), kept with the Live set
     // so the screen shows it again. The sound itself is in the parameters.
+    // "pads": Brudd's pads learned on the screen (OndShared.hpp PadMap), kept with the set too
     void initState(uint32_t index, State &state) override
     {
-        if (index != 0)
-            return;
-        state.key = "preset";
+        state.key = index == 0 ? "preset" : "pads";
         state.defaultValue = "";
-        state.label = "Preset";
+        state.label = index == 0 ? "Preset" : "Pads";
         state.hints = 0;
     }
-    String getState(const char *key) const override { return std::strcmp(key, "preset") ? String() : userPreset; }
+    String getState(const char *key) const override
+    {
+        return !std::strcmp(key, "preset") ? userPreset : !std::strcmp(key, "pads") ? String(padsText.c_str()) : String();
+    }
     void setState(const char *key, const char *value) override
     {
         if (!std::strcmp(key, "preset"))
             userPreset = value;
+        else if (!std::strcmp(key, "pads") && value[0])
+            setPads(ond::PadMap::parse(value));
     }
 
     void initParameter(uint32_t index, Parameter &p) override
@@ -89,6 +95,13 @@ protected:
                 p.enumValues.restrictedMode = true;
                 p.enumValues.values = ev;
             }
+            return;
+        }
+        if (c == -5) {
+            p.hints = kParameterIsOutput | kParameterIsInteger;
+            p.name = "MIDI In";
+            p.symbol = "midi_in";
+            p.ranges.min = 0.f, p.ranges.max = 65535.f, p.ranges.def = 0.f;
             return;
         }
         if (c == -2) {
@@ -137,8 +150,8 @@ protected:
 
     void setParameterValue(uint32_t index, float value) override
     {
-        if (index >= (uint32_t)ond::paramCount() || (int)index == ond::meterParam() || (int)index == ond::breakerOutParam())
-            return;
+        if (index >= (uint32_t)ond::paramCount() || (ond::paramControls()[index] <= -2 && ond::paramControls()[index] != -3))
+            return;                             // (the outputs)
         values[index] = value;
         touched[index] = true;                  // set by the host or the screen: not the sound's own any more
         dirty[index] = true;                    // applied on the audio thread, at the next run
@@ -208,6 +221,7 @@ protected:
         meter = std::fmax(peak, meter * std::pow(0.1f, (float)frames / (float)getSampleRate()));
         values[ond::meterParam()] = meter;
         values[ond::breakerOutParam()] = (float)(ond_breaker_playing() + 1);
+        values[ond::midiInParam()] = (float)midiSeen;
     }
 
 private:
@@ -232,35 +246,56 @@ private:
         return key;
     }
 
-    // channel 10 is Brudd's (docs/controller-mpk-mini.md: it never plays the organ): bank B's pads hold a
-    // breaker (the last pressed wins; let go, the one held before it again); bank A waits for the hits
+    void setPads(const ond::PadMap &m)          // (not the audio thread: the code -> breaker table, atomically)
+    {
+        for (int c = 0; c < 256; ++c)
+            padOf[c] = -1;
+        for (int b = 0; b < ond::NBREAK; ++b)
+            if (m.code[b] >= 0)
+                padOf[m.code[b]] = (int8_t)b;
+        padsLearned = !m.empty();
+        padsText = m.text();
+    }
+
+    // a note or CC learned for a breaker holds it, on any channel (Live hands a plugin everything on channel 1);
+    // until pads are learned, channel 10's bank B (notes 44..51) does, where a host keeps the channel, and the
+    // rest of channel 10 never plays the organ (docs/controller-mpk-mini.md). The last pressed wins; let go, the
+    // one held before it again
     void midiIn(uint8_t st, uint8_t d1, uint8_t d2)
     {
-        if ((st & 0x0Fu) != 9u) {
+        const uint8_t kind = st & 0xF0u;
+        const bool note = kind == 0x90u || kind == 0x80u, cc = kind == 0xB0u;
+        const bool press = (kind == 0x90u && d2 > 0) || (cc && d2 >= 64u);
+        int b = -1;
+        if ((kind == 0x90u && d2 > 0) || (cc && d2 > 0))   // (the screen's LEARN and readout)
+            midiSeen = ((midiSeen / 4096 + 1) % 16) * 4096 + (st & 0x0F) * 256 + (cc ? 128 : 0) + (d1 & 127);
+        if (note || cc)
+            b = padOf[(cc ? 128 : 0) + (d1 & 127)];
+        if (b < 0 && !padsLearned && note && (st & 0x0Fu) == 9u) {
+            const int pad = (int)d1 - ond::PAD_B_FIRST;
+            if (pad < 0 || pad >= 8)
+                return;                          // (channel 10: Brudd's, never the organ)
+            b = ond::PAD_B[pad];
+        }
+        if (b < 0) {
             ond_midi(st, d1, d2);
             return;
         }
-        const int pad = (int)d1 - ond::PAD_B_FIRST;
-        if ((st & 0xF0u) != 0x90u && (st & 0xF0u) != 0x80u)
-            return;
-        if (pad < 0 || pad >= 8)
-            return;
-        const bool on = (st & 0xF0u) == 0x90u && d2 > 0;
         for (int i = 0; i < padsHeld; ++i)       // (out of the stack wherever it is)
-            if (padStack[i] == pad) {
+            if (padStack[i] == b) {
                 for (int k = i; k + 1 < padsHeld; ++k)
                     padStack[k] = padStack[k + 1];
                 --padsHeld;
                 break;
             }
-        if (on && padsHeld < 8)
-            padStack[padsHeld++] = pad;
+        if (press && padsHeld < ond::NBREAK)
+            padStack[padsHeld++] = b;
     }
 
     void updateBreaker()                        // the pads first, else the parameter (the screen, automation)
     {
         const int param = (int)std::lround(values[ond::breakerParam()].load()) - 1;
-        const int want = padsHeld ? ond::PAD_B[padStack[padsHeld - 1]] : param;
+        const int want = padsHeld ? padStack[padsHeld - 1] : param;
         if (want != breakerNow) {
             breakerNow = want;
             ond_breaker(want);
@@ -329,7 +364,10 @@ private:
     float blockL[OND_BLOCK], blockR[OND_BLOCK];
     uint32_t blockPos = OND_BLOCK;
     float meter = 0.f;
-    int padStack[8] = {}, padsHeld = 0, breakerNow = -1;
+    int padStack[ond::NBREAK] = {}, padsHeld = 0, breakerNow = -1, midiSeen = 0;
+    std::atomic<int8_t> padOf[256];
+    std::atomic<bool> padsLearned{false};
+    std::string padsText;
     bool owner = false;
     String userPreset;
 
