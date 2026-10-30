@@ -136,6 +136,11 @@ void ond_set_global(int g, int v)
     song.g[OND_G_ID[g]] = (int16_t)clamp(v, GP[OND_G_ID[g]].min, GP[OND_G_ID[g]].max);
 }
 int ond_get_global(int g) { return g >= 0 && g < OND_G_COUNT ? song.g[OND_G_ID[g]] : 0; }
+void ond_global_range(int g, int *min, int *max, int *def)
+{
+    const param_desc_t *d = &GP[OND_G_ID[g >= 0 && g < OND_G_COUNT ? g : 0]];
+    *min = d->min, *max = d->max, *def = d->def;
+}
 
 void ond_set_param(int p, int v)
 {
@@ -144,6 +149,11 @@ void ond_set_param(int p, int v)
     trk[0].p[OND_P_ID[p]] = (int16_t)clamp(v, TP[OND_P_ID[p]].min, TP[OND_P_ID[p]].max);
 }
 int ond_get_param(int p) { return p >= 0 && p < OND_P_COUNT ? trk[0].p[OND_P_ID[p]] : 0; }
+void ond_param_range(int p, int *min, int *max, int *def)
+{
+    const param_desc_t *d = &TP[OND_P_ID[p >= 0 && p < OND_P_COUNT ? p : 0]];
+    *min = d->min, *max = d->max, *def = d->def;
+}
 
 void ond_render(float *l, float *r, uint32_t n)
 {

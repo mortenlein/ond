@@ -31,8 +31,10 @@ enum { OND_G_DUST, OND_G_RTYPE, OND_G_RSIZE, OND_G_RDAMP, OND_G_DTIME, OND_G_DFD
 enum { OND_P_LEVEL, OND_P_CHOR, OND_P_DLY, OND_P_REV, OND_P_COUNT };
 void ond_set_global(int g, int value);    /* clamped to the firmware's range */
 int ond_get_global(int g);
+void ond_global_range(int g, int *min, int *max, int *def);
 void ond_set_param(int p, int value);
 int ond_get_param(int p);
+void ond_param_range(int p, int *min, int *max, int *def);
 
 /* n frames (a multiple of OND_BLOCK) of stereo at OND_FS, -1..1 */
 void ond_render(float *left, float *right, uint32_t n);
