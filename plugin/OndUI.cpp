@@ -671,7 +671,17 @@ private:
             }
         }
         const int n = ond_breaker_count(), playing = (int)std::lround(vals[(size_t)ond::breakerOutParam()]) - 1;
-        const float gap = 10.f, pw = (w - 28.f - 7.f * gap) / 8.f, ph = (h - 50.f - gap) / 2.f;
+        const float side = 130.f;           // CATCH and LAND on the right
+        const float gap = 10.f, pw = (w - 28.f - side - 7.f * gap) / 8.f, ph = (h - 50.f - gap) / 2.f;
+        static const char *const KEYS[2] = {"catch", "land"};
+        for (int k = 0; k < 2; ++k) {
+            const int p = ond::paramOfKey(KEYS[k]);
+            const float cx = x0 + w - 14.f - side / 2.f + 6.f, cy = y0 + 36.f + ph * ((float)k + 0.5f) + gap * (float)k;
+            if (p < 0)
+                continue;
+            drawKnob(p, cx, cy + 4.f, 26.f);
+            hits.push_back({cx - side / 2.f, cy - ph / 2.f, side, ph, p});
+        }
         for (int i = 0; i < n; ++i) {
             const float px = x0 + 14.f + (pw + gap) * (float)(i % 8), py = y0 + 36.f + (ph + gap) * (float)(i / 8);
             const bool on = playing == i || padDown == i, armed = learning && learnArmed == i;

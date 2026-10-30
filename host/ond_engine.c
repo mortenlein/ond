@@ -166,6 +166,8 @@ void ond_set_tempo(double bpm)
         song.g[G_BPM] = (int16_t)clamp((int32_t)(bpm + 0.5), GP[G_BPM].min, GP[G_BPM].max);
 }
 
+void ond_breaker_catch(int ms);
+
 /* ---- the controls (ond_engine.h). Append-only: a control's index is its plugin parameter, saved in Live sets */
 typedef struct {
     const char *key, *section;
@@ -182,6 +184,12 @@ static const param_desc_t LY_OCT_D = {"OCT", F_ENUM, 0, 4, 2, N_OCTS5, 0};
 static const param_desc_t LY_LEVEL_D = {"LEVEL", F_DB, 0, 127, 104, 0, 0};
 static const param_desc_t LY_PAN_D = {"PAN", F_BIPCT, -64, 63, 0, 0, 0};
 static const param_desc_t LY_FILT_D = {"FILT", F_FILT, -64, 63, 0, 0, 0};
+/* Brudd (Ond's own): CATCH, how long a let-go breaker fights its way back (ms; the SL-1200's 0.7 s at 700), LAND,
+ * the grid its return waits for (the plugin holds it till then) */
+static const char *const N_LAND[] = {"OFF", "1/16", "1/8", "1/4"};
+static const param_desc_t CATCH_D = {"CATCH", F_INT, 0, 1000, 0, 0, "ms"};
+static const param_desc_t LAND_D = {"LAND", F_ENUM, 0, 3, 0, N_LAND, 0};
+static int16_t host_val[2];                    /* CATCH, LAND */
 static const ctl_t CTL_TAB[] = {
     {"brite", "MACROS", OND_SCOPE_SOUND, P_MAC1, 0},
     {"timbr", "MACROS", OND_SCOPE_SOUND, P_MAC2, 0},
@@ -235,6 +243,8 @@ static const ctl_t CTL_TAB[] = {
     {"layer_level", "LAYER", OND_SCOPE_LAYER, P_LEVEL, 1, &LY_LEVEL_D},
     {"layer_pan", "LAYER", OND_SCOPE_LAYER, P_PAN, 1, &LY_PAN_D},
     {"layer_filter", "LAYER", OND_SCOPE_LAYER, P_TFLT, 1, &LY_FILT_D},
+    {"catch", "BRUDD", OND_SCOPE_HOST, 0, 1, &CATCH_D},                  /* (Ond 0.6) */
+    {"land", "BRUDD", OND_SCOPE_HOST, 1, 1, &LAND_D},
 };
 
 static const param_desc_t *ctl_desc(int c, int engine)
@@ -277,7 +287,11 @@ void ond_control_set(int c, int v)
         song.g[k->id] = (int16_t)v;
     else if (k->scope == OND_SCOPE_LAYER)
         trk[1].p[k->id] = (int16_t)v;
-    else
+    else if (k->scope == OND_SCOPE_HOST) {
+        host_val[k->id] = (int16_t)v;
+        if (k->id == 0)
+            ond_breaker_catch(v);
+    } else
         trk[0].p[k->scope == OND_SCOPE_EDIT ? P_E0 + k->id : k->id] = (int16_t)v;
 }
 
@@ -291,6 +305,8 @@ int ond_control_get(int c)
         return song.g[k->id];
     if (k->scope == OND_SCOPE_LAYER)
         return trk[1].p[k->id];
+    if (k->scope == OND_SCOPE_HOST)
+        return host_val[k->id];
     return trk[0].p[k->scope == OND_SCOPE_EDIT ? P_E0 + k->id : k->id];
 }
 
@@ -320,7 +336,7 @@ int ond_preset_value(int c, int engine, int preset)
     if (c < 0 || c >= ond_control_count())
         return 0;
     k = &CTL_TAB[c];
-    if (k->scope == OND_SCOPE_GLOBAL || k->scope == OND_SCOPE_LAYER || k->kept)
+    if (k->scope == OND_SCOPE_GLOBAL || k->scope == OND_SCOPE_LAYER || k->scope == OND_SCOPE_HOST || k->kept)
         return ctl_desc(c, engine)->def;
     preset_params(p, (uint32_t)(engine < 0 ? 0 : engine), (uint32_t)(preset < 0 ? 0 : preset));
     return p[k->scope == OND_SCOPE_EDIT ? P_E0 + k->id : k->id];
@@ -331,6 +347,8 @@ int ond_breaker_count(void) { return (int)PUNCH_NFX; }
 const char *ond_breaker_name(int i) { return i >= 0 && i < (int)PUNCH_NFX ? PUNCH_NAME[i] : ""; }
 void ond_breaker(int i) { punch.req = (int8_t)(i >= 0 && i < (int)PUNCH_NFX ? i : -1); }
 int ond_breaker_playing(void) { return punch.cur; }
+void ond_breaker_catch(int ms) { punch_catch = ms > 0 ? (uint32_t)(ms > 2000 ? 2000 : ms) * (uint32_t)FS / 1000u : 0u; }
+double ond_tempo(void) { return (double)song.g[G_BPM]; }
 
 void ond_render(float *l, float *r, uint32_t n)
 {

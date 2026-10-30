@@ -66,3 +66,7 @@ first, in this order:
 3. **LEARN**: click a breaker (orange outline), hit the pad: does its tag change to `NOTE n` / `CC n`?
 4. CC mode: Live gives VST3 plugins CCs through DPF's MIDI mapping parameters; if CCs never show in the readout,
    that path is the suspect (test with `clap_render`-style CC events, or a VST3 host log).
+
+## Step 2 (2026-10-31): CATCH and LAND, ready to listen — `refs/008c-2/LISTEN.md`
+
+CATCH in `punch.c` (under `OND_PUNCH`: the FM-1 build is the same file), LAND in the plugin (the release waits).

@@ -46,6 +46,14 @@ static struct {
 } punch = {.req = -1, .cur = -1};
 
 static uint32_t beat_samples(void) { return (uint32_t)FS * 60u / (uint32_t)song.g[G_BPM]; }
+#if OND_PUNCH
+/* (Ond) CATCH: let go, the effect fights its way back over this many samples instead of 64: the wet fades out
+ * that slowly, and a tape STOP speeds back up to the tape's speed meanwhile (a turntable regaining speed: the
+ * SL-1200 MK2 takes 0.7 s, docs/sound-lessons.md section 8). 0: as SLOOP's */
+static uint32_t punch_catch;
+static uint8_t punch_catching;
+static int32_t punch_gq;                            /* the wet gain while catching, Q23 (g << 8: a fade of up to 2 s) */
+#endif
 
 static int32_t ring_raw(uint32_t i) { return punch_ring[i & (PUNCH_N - 1u)]; }   /* the stored 16 bits (mix / 8) */
 static int32_t ring_at(uint32_t i) { return ring_raw(i) << 3; }
@@ -102,7 +110,12 @@ static int32_t punch_ring_fx(int32_t fx)
     case PX_STOP:
         y = ring_q16(punch.rp);
         punch.rp += punch.spd;
-        punch.spd = punch.spd > punch.dspd ? punch.spd - punch.dspd : 0u;   /* to a stop in a beat */
+#if OND_PUNCH
+        if (punch_catching)                             /* (Ond: CATCH, back up to speed as it fades) */
+            punch.spd = punch.spd + 65536u / punch_catch + 1u >= 65536u ? 65536u : punch.spd + 65536u / punch_catch + 1u;
+        else
+#endif
+            punch.spd = punch.spd > punch.dspd ? punch.spd - punch.dspd : 0u;   /* to a stop in a beat */
         return ((y >> 3) * (int32_t)(punch.spd >> 4)) >> 9;
     case PX_WOBBLE: {
         int32_t d = 700 + (sine_i(punch.lfo) * 180 >> 15);
@@ -232,8 +245,21 @@ static void punch_process(int32_t *l, int32_t *r, uint32_t n)
         }
         if ((uint32_t)punch.g < target)
             punch.g = punch.g + 512 > 32767 ? 32767 : punch.g + 512;
-        else if ((uint32_t)punch.g > target)
+        else if ((uint32_t)punch.g > target) {
+#if OND_PUNCH
+            if (punch_catch && want != fx) {            /* (Ond: CATCH, out over punch_catch samples) */
+                const int32_t st = (int32_t)((32767u << 8) / punch_catch) + 1;
+                if (!punch_catching)
+                    punch_gq = punch.g << 8;
+                punch_gq = punch_gq < st ? 0 : punch_gq - st;
+                punch.g = punch_gq >> 8;
+            } else
+#endif
             punch.g = punch.g < 512 ? 0 : punch.g - 512;
+        }
+#if OND_PUNCH
+        punch_catching = (uint8_t)(punch_catch && want != fx);
+#endif
         l[i] = x + ((((wl - x) >> 3) * (punch.g >> 3)) >> 9);   /* (no 32-bit overflow) */
         r[i] = y + ((((wr - y) >> 3) * (punch.g >> 3)) >> 9);
         punch.w++;

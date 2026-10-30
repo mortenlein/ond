@@ -33,11 +33,13 @@ void ond_set_tempo(double bpm);            /* the host's tempo: the arp, a synce
 
 /* the controls the plugin shows: the firmware's own parameters, by stable keys (append-only: saved sets keep
  * them). EDIT 1..8 are the engine's own (name, range, value text as the FM-1 shows them for that engine). */
-enum { OND_SCOPE_GLOBAL, OND_SCOPE_SOUND, OND_SCOPE_EDIT, OND_SCOPE_LAYER };
+enum { OND_SCOPE_GLOBAL, OND_SCOPE_SOUND, OND_SCOPE_EDIT, OND_SCOPE_LAYER, OND_SCOPE_HOST };   /* (HOST: Ond's
+                                           * own, not the firmware's: Brudd's CATCH and LAND) */
 typedef struct {
     const char *key;                       /* "brite", "edit1", "reverb_type" ... */
     const char *label;                     /* the FM-1's ("BRITE", the engine's "DRAW" ...) */
-    const char *section;                   /* "MACROS", "ENGINE", "ENVELOPE", "CHARACTER", "PLAY", "SPACE", "LAYER" */
+    const char *section;                   /* "MACROS", "ENGINE", "ENVELOPE", "CHARACTER", "PLAY", "SPACE", "LAYER",
+                                            * "BRUDD" */
     int min, max, def;
     int is_enum;                           /* the values are names (ond_control_text) */
     int scope;                             /* OND_SCOPE_* */
@@ -56,6 +58,8 @@ int ond_breaker_count(void);
 const char *ond_breaker_name(int i);     /* "STUTTER", "STOP", "HALF" ... (pure) */
 void ond_breaker(int i);
 int ond_breaker_playing(void);           /* the one sounding (fading out included), -1 none */
+void ond_breaker_catch(int ms);          /* CATCH: the release fights back over ms (0: SLOOP's 64 samples) */
+double ond_tempo(void);                  /* the tempo the engine runs at (the host's, else 90) */
 
 /* n frames (a multiple of OND_BLOCK) of stereo at OND_FS, -1..1 */
 void ond_render(float *left, float *right, uint32_t n);

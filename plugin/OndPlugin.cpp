@@ -181,6 +181,7 @@ protected:
         meter = 0.f;
         padsHeld = 0;
         breakerNow = -1;
+        landLeft = -1;
     }
 
     void deactivate() override
@@ -204,6 +205,7 @@ protected:
         if (tp.bbt.valid)
             ond_set_tempo(tp.bbt.beatsPerMinute);
         applyParameters();
+        blockStart = frameNow;
         uint32_t done = 0, e = 0;
         while (done < frames) {
             for (; e < evCount && ev[e].frame <= done; ++e)
@@ -211,7 +213,12 @@ protected:
                     midiIn(ev[e].data[0], ev[e].size > 1u ? ev[e].data[1] : 0, ev[e].size > 2u ? ev[e].data[2] : 0);
             updateBreaker();
             const uint32_t next = e < evCount && ev[e].frame < frames ? ev[e].frame : frames;
-            for (; done < next; ++done) {
+            for (; done < next; ++done, ++frameNow) {
+                if (landLeft > 0 && --landLeft == 0) {   // landed: the groove back
+                    landLeft = -1;
+                    breakerNow = -1;
+                    ond_breaker(-1);
+                }
                 if (resampler.isBypass()) {
                     engineSample(outL[done], outR[done]);
                     continue;
@@ -250,7 +257,7 @@ private:
             {"reverb_type", "Reverb Type"}, {"reverb_size", "Reverb Size"}, {"reverb_damp", "Reverb Damping"},
             {"level", "Level"}, {"layer_mode", "Layer Mode"}, {"layer_oct", "Layer Octave"},
             {"layer_split", "Layer Split"}, {"layer_level", "Layer Level"}, {"layer_pan", "Layer Pan"},
-            {"layer_filter", "Layer Filter"}};
+            {"layer_filter", "Layer Filter"}, {"catch", "Catch"}, {"land", "Land"}};
         for (const auto &n : N)
             if (!std::strcmp(n[0], key))
                 return n[1];
@@ -307,10 +314,46 @@ private:
     {
         const int param = (int)std::lround(values[ond::breakerParam()].load()) - 1;
         const int want = padsHeld ? padStack[padsHeld - 1] : param;
-        if (want != breakerNow) {
-            breakerNow = want;
-            ond_breaker(want);
+        if (want == breakerNow) {
+            landLeft = -1;                      // (pressed again while landing: it stays)
+            return;
         }
+        if (want < 0 && breakerNow >= 0) {     // let go: LAND holds it to the grid
+            if (landLeft < 0)
+                landLeft = framesToLand();
+            if (landLeft > 0)
+                return;
+        }
+        if (want >= 0 && breakerNow < 0)
+            pressedAt = frameNow;
+        landLeft = -1;
+        breakerNow = want;
+        ond_breaker(want);
+    }
+
+    // frames to the next 1/16, 1/8 or beat (LAND): on Live's grid while its transport runs, else on the grid
+    // that started at the press (so a loop lets go after whole loops)
+    int64_t framesToLand() const
+    {
+        static const double DIV[4] = {0.0, 0.25, 0.5, 1.0};   // beats
+        const int c = ond::paramOfKey("land");
+        const int land = c >= 0 ? (int)std::lround(values[c].load()) : 0;
+        if (land <= 0 || land > 3)
+            return 0;
+        const TimePosition &tp = getTimePosition();
+        const double bpm = tp.bbt.valid && tp.bbt.beatsPerMinute > 0.0 ? tp.bbt.beatsPerMinute : ond_tempo();
+        const double sr = getSampleRate(), div = DIV[land], divFrames = div * 60.0 / bpm * sr;
+        double left;
+        if (tp.playing && tp.bbt.valid && tp.bbt.ticksPerBeat > 0.0) {
+            const double beat = (double)(tp.bbt.bar - 1) * tp.bbt.beatsPerBar + (tp.bbt.beat - 1) +
+                                tp.bbt.tick / tp.bbt.ticksPerBeat + (double)(frameNow - blockStart) * bpm / 60.0 / sr;
+            const double into = std::fmod(beat, div);
+            left = (div - into) * 60.0 / bpm * sr;
+        } else {
+            const double since = (double)(frameNow - pressedAt);
+            left = std::ceil(since / divFrames) * divFrames - since;
+        }
+        return left < 1.0 ? 0 : (int64_t)left;
     }
 
     void engineSample(float &l, float &r)
@@ -382,6 +425,7 @@ private:
     uint32_t blockPos = OND_BLOCK;
     float meter = 0.f;
     int padStack[ond::NBREAK] = {}, padsHeld = 0, breakerNow = -1, midiSeen = 0;
+    int64_t frameNow = 0, blockStart = 0, pressedAt = 0, landLeft = -1;   // (LAND: output frames)
     std::atomic<int8_t> padOf[256];
     std::atomic<bool> padsLearned{false};
     std::string padsText;
