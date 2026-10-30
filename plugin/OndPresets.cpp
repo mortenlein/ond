@@ -87,6 +87,10 @@ bool readFile(const fs::path &path, UserPreset &out)
             out.engine = v;
         else if (k == "preset")
             out.preset = v;
+        else if (k == "layer_engine")
+            out.layerEngine = v;
+        else if (k == "layer_preset")
+            out.layerPreset = v;
         else if (k != "version")
             out.values[k] = std::atoi(v.c_str());
     }
@@ -121,6 +125,8 @@ bool savePreset(const UserPreset &p)
             return false;
         f << "# Ond preset (github.com/mortenlein/ond)\nversion=1\nname=" << p.name << "\nengine=" << p.engine
           << "\npreset=" << p.preset << "\n";
+        if (!p.layerEngine.empty())
+            f << "layer_engine=" << p.layerEngine << "\nlayer_preset=" << p.layerPreset << "\n";
         for (const auto &kv : p.values)
             f << kv.first << "=" << kv.second << "\n";
         if (!f)

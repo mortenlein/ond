@@ -13,6 +13,7 @@ namespace ond {
 struct UserPreset {
     std::string name;                      // as the player named it (the file's name follows it)
     std::string engine, preset;            // the factory sound under it
+    std::string layerEngine, layerPreset;  // (0.5) the layer's sound; empty: the layer as it is
     std::map<std::string, int> values;     // control key -> the firmware's value
 };
 

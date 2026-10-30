@@ -55,3 +55,14 @@ same file as before. Played from channel 10 (MPK bank B, notes 44–51), the scr
 "Breaker" parameter (automation). DUB-1's stutter / tape stop / freeze values are in `docs/sound-lessons.md` §8
 for when Morten wants their character instead. Next, after Morten's verdict: CATCH, LAND, transport sync,
 velocity, Duck.
+
+## Open (2026-10-31): the MPK's pads still play notes in Live
+
+Morten: pads still just play notes, after LEARN 0.4 was installed (C:\VST) and the pads put in CC mode. To check
+first, in this order:
+1. **Which Ond Live loads.** The 0.1 copy is still in `C:\Program Files\Common Files\VST3\Ond.vst3` (same plugin
+   id, no BRUDD view): if the screen has no BRUDD button, Live loaded that one. Delete it (admin), rescan.
+2. **The BRUDD view's readout** (`IN: CH .. NOTE/CC ..`, top right): does anything arrive when a pad is hit?
+3. **LEARN**: click a breaker (orange outline), hit the pad: does its tag change to `NOTE n` / `CC n`?
+4. CC mode: Live gives VST3 plugins CCs through DPF's MIDI mapping parameters; if CCs never show in the readout,
+   that path is the suspect (test with `clap_render`-style CC events, or a VST3 host log).

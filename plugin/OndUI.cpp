@@ -62,7 +62,8 @@ struct Hit {
     int param;                     // >= 0 a knob; -10 previous, -11 next, -12 the browser, -20 SAVE, -21 SAVE AS;
                                    // the browser: -100 OND, -101 MINE, -200-e an engine, -1000-i a sound,
                                    // -2000-k my preset k, -3000-k delete it, -30 RENAME, -31 the folder;
-                                   // -22 the BRUDD view, -4000-i breaker i's pad, -23 LEARN
+                                   // -22 the BRUDD view, -4000-i breaker i's pad, -23 LEARN; -24 the LAYER
+                                   // view, -25/-26 the layer's previous / next sound, -27 its browser
 };
 
 } // namespace
@@ -121,10 +122,12 @@ protected:
             drawBrowser();
         else
             for (const Section &s : sections())
-                if (!bruddView || s.y < 300.f)
+                if (view == 0 || s.y < 300.f)
                     drawSection(s);
-        if (bruddView && !browserOpen)
+        if (view == 1 && !browserOpen)
             drawBrudd();
+        if (view == 2 && !browserOpen)
+            drawLayer();
         restore();
     }
 
@@ -167,9 +170,16 @@ protected:
                 saveCurrent();
             } else if (h.param == -21) {
                 saveAs();
-            } else if (h.param == -22) {
-                bruddView = !bruddView;
+            } else if (h.param == -22 || h.param == -24) {
+                const int v = h.param == -22 ? 1 : 2;
+                view = view == v ? 0 : v;
                 learning = false, learnArmed = -1;
+            } else if (h.param == -25 || h.param == -26) {
+                const int n = (int)ond::sounds().size();
+                setValue(ond::layerSoundParam(), (float)((layerIndex() + (h.param == -26 ? 1 : n - 1)) % n));
+                touch();
+            } else if (h.param == -27) {
+                openBrowser(true);
             } else if (h.param == -23) {
                 learning = !learning;
                 learnArmed = -1;
@@ -403,12 +413,14 @@ private:
         selectSound((soundIndex() + dir + n) % n);
     }
 
-    void openBrowser()
+    void openBrowser(bool forLayer = false)
     {
         mine = ond::listPresets();         // (files added or removed outside since)
         browserOpen = true;
-        browserEngine = currentEngine();
-        browserGroup = mineIndex() >= 0 ? 1 : soundIndex() < ond::FAVOURITES ? 0 : 2;
+        browserLayer = forLayer;
+        const int i = forLayer ? layerIndex() : soundIndex();
+        browserEngine = ond::sounds()[(size_t)i].engine;
+        browserGroup = !forLayer && mineIndex() >= 0 ? 1 : i < ond::FAVOURITES ? 0 : 2;
         deleteArmed = -1;
     }
 
@@ -420,6 +432,9 @@ private:
         p.name = name;
         p.engine = ond_engine_name(s.engine);
         p.preset = ond_preset_name(s.engine, s.preset);
+        const ond::Sound &ls = ond::sounds()[(size_t)layerIndex()];
+        p.layerEngine = ond_engine_name(ls.engine);
+        p.layerPreset = ond_preset_name(ls.engine, ls.preset);
         for (int i = 1; i < ond::paramCount(); ++i) {
             const int c = ond::paramControls()[(size_t)i];
             if (c < 0)
@@ -492,6 +507,13 @@ private:
                 p.preset == ond_preset_name(all[(size_t)i].engine, all[(size_t)i].preset))
                 found = i;
         selectSound(found >= 0 ? found : 0);
+        if (!p.layerEngine.empty())        // the layer's sound, by names
+            for (int i = 0; i < (int)all.size(); ++i)
+                if (p.layerEngine == ond_engine_name(all[(size_t)i].engine) &&
+                    p.layerPreset == ond_preset_name(all[(size_t)i].engine, all[(size_t)i].preset)) {
+                    setValue(ond::layerSoundParam(), (float)i);
+                    break;
+                }
         const ond::Sound &s = all[(size_t)(found >= 0 ? found : 0)];
         for (int i = 1; i < ond::paramCount(); ++i) {
             const int c = ond::paramControls()[(size_t)i];
@@ -614,19 +636,18 @@ private:
         const float tw = pixelText(bx + 44.f, by + 19.f, name.c_str(), nc, 2.f);
         if (renaming)                      // the cursor
             fill(bx + 44.f + tw + 2.f, by + 19.f, 3.f, 30.f, ACCENT);
-        button(632.f, by, 64.f, bh, "SAVE", !userName.empty() && modified, -20);
-        button(704.f, by, 84.f, bh, "SAVE AS", false, -21);
-        button(796.f, by, 76.f, bh, "BRUDD", bruddView, -22);
-        // the output: a bar that breathes with the sound
-        const float mx = 884.f, mw = 92.f, my = 34.f, m = vals[(size_t)ond::meterParam()];
+        button(632.f, by, 60.f, bh, "SAVE", !userName.empty() && modified, -20);
+        button(698.f, by, 84.f, bh, "SAVE AS", false, -21);
+        button(788.f, by, 92.f, bh, "LAYER", view == 2 || layerOn(), -24);
+        button(886.f, by, 90.f, bh, "BRUDD", view == 1, -22);
+        // the output: a line under the name that breathes with the sound
+        const float m = vals[(size_t)ond::meterParam()];
         const float db = m > 1e-5f ? 20.f * std::log10(m) : -100.f, k = std::fmax(0.f, std::fmin(1.f, (db + 60.f) / 60.f));
-        pixelText(mx, 12.f, "OUT", DIM);
-        pixelText(mx + mw, 12.f, "0.3", FAINT, 1.f, 1);
-        fill(mx, my, mw, 6.f, KNOB, 1.f, 3.f);
         if (k > 0.f)
-            fill(mx, my, mw * k, 6.f, db > -6.f ? ACCENT : TEXT, db > -6.f ? 1.f : 0.75f, 3.f);
+            fill(bx + 4.f, by + bh - 3.f, (bw - 8.f) * k, 2.f, db > -6.f ? ACCENT : TEXT, db > -6.f ? 1.f : 0.5f, 1.f);
+        pixelText(24.f, 60.f, "0.5", FAINT);
         if (renaming)
-            pixelText(bx + bw, by + bh + 4.f, "TYPE A NAME, ENTER", FAINT, 1.f, 1);
+            pixelText(bx + bw, by + bh + 6.f, "TYPE A NAME, ENTER", FAINT, 1.f, 1);
     }
 
     // Brudd's breakers (docs/rhythm-breaks.md): hold a pad, the whole mix breaks; let go, the groove is back where
@@ -671,6 +692,48 @@ private:
             if (!tag.empty())
                 pixelText(px + 10.f, py + 8.f, tag.c_str(), on ? BG : armed || learning ? ACCENT : FAINT);
             hits.push_back({px, py, pw, ph, -4000 - i});
+        }
+    }
+
+    // the layer (Clipper's LAYER): a second sound under the first (LAYER) or below a split (SPLIT), its octave,
+    // level, pan and filter: a drone under the organ, or one hand each
+    bool layerOn() const
+    {
+        const int p = ond::paramOfKey("layer_mode");
+        return p >= 0 && std::lround(vals[(size_t)p]) != 0;
+    }
+    int layerIndex() const
+    {
+        const int i = (int)std::lround(vals[(size_t)ond::layerSoundParam()]);
+        return i >= 0 && i < (int)ond::sounds().size() ? i : 0;
+    }
+
+    void drawLayer()
+    {
+        const float x0 = 16.f, y0 = 336.f, w = 968.f, h = 348.f;
+        fill(x0, y0, w, h, PANEL, 1.f, 6.f);
+        pixelText(x0 + 14.f, y0 + 10.f, "LAYER", DIM);
+        pixelText(x0 + w - 14.f, y0 + 10.f, "A SECOND SOUND: UNDER EVERY NOTE (LAYER), OR BELOW THE SPLIT (SPLIT)", FAINT, 1.f, 1);
+        const ond::Sound &s = ond::sounds()[(size_t)layerIndex()];
+        const float bx = x0 + 14.f, by = y0 + 40.f, bw = 420.f, bh = 52.f;   // its sound, as the header's
+        fill(bx, by, bw, bh, KNOB, 1.f, 4.f);
+        pixelText(bx + 18.f, by + 18.f, "<", DIM, 1.f, 0);
+        pixelText(bx + bw - 18.f, by + 18.f, ">", DIM, 1.f, 0);
+        hits.push_back({bx, by, 36.f, bh, -25});
+        hits.push_back({bx + bw - 36.f, by, 36.f, bh, -26});
+        hits.push_back({bx + 36.f, by, bw - 72.f, bh, -27});
+        pixelText(bx + 44.f, by + 2.f, ond_engine_name(s.engine), DIM);
+        pixelText(bx + 44.f, by + 19.f, ond_preset_name(s.engine, s.preset), layerOn() ? TEXT : DIM, 2.f);
+        static const char *const KEYS[] = {"layer_mode", "layer_oct", "layer_split", "layer_level", "layer_pan",
+                                           "layer_filter"};
+        const float cw = (w - 28.f) / 6.f, cy = y0 + 220.f;
+        for (int i = 0; i < 6; ++i) {
+            const int p = ond::paramOfKey(KEYS[i]);
+            if (p < 0)
+                continue;
+            const float cx = x0 + 14.f + cw * ((float)i + 0.5f);
+            drawKnob(p, cx, cy, 30.f);
+            hits.push_back({cx - cw / 2.f, cy - 70.f, cw, 140.f, p});
         }
     }
 
@@ -777,7 +840,10 @@ private:
     {
         fill(16.f, 84.f, 968.f, 600.f, PANEL, 1.f, 6.f);
         float y = 100.f;
-        browserRow(y, "MINE", browserGroup == 1, -101);
+        if (!browserLayer)                 // (the layer takes factory sounds)
+            browserRow(y, "MINE", browserGroup == 1, -101);
+        else
+            pixelText(36.f, y, "FOR THE LAYER", ACCENT);
         y += 22.f;
         browserRow(y, "OND", browserGroup == 0, -100);
         y += 8.f;
@@ -803,7 +869,7 @@ private:
         for (size_t k = 0; k < list.size(); ++k) {
             const ond::Sound &s = all[(size_t)list[k]];
             const float bx = 216.f + 256.f * (float)(k / 22), byy = 100.f + 25.f * (float)(k % 22);
-            const bool cur = userName.empty() && list[k] == soundIndex();
+            const bool cur = browserLayer ? list[k] == layerIndex() : userName.empty() && list[k] == soundIndex();
             if (cur)
                 fill(bx - 6.f, byy - 4.f, 244.f, 24.f, ACCENT, 0.16f, 3.f);
             pixelText(bx, byy, ond_preset_name(s.engine, s.preset), cur ? ACCENT : TEXT);
@@ -853,14 +919,19 @@ private:
                 browserOpen = false;
             } else if (h.param == -100) {
                 browserGroup = 0;
-            } else if (h.param == -101) {
+            } else if (h.param == -101 && !browserLayer) {
                 mine = ond::listPresets();
                 browserGroup = 1;
             } else if (h.param <= -200 && h.param > -1000) {
                 browserGroup = 2;
                 browserEngine = -200 - h.param;
             } else if (h.param <= -1000 && h.param > -2000) {
-                selectSound(-1000 - h.param);
+                if (browserLayer) {
+                    setValue(ond::layerSoundParam(), (float)(-1000 - h.param));
+                    touch();
+                } else {
+                    selectSound(-1000 - h.param);
+                }
                 browserOpen = false;
             } else if (h.param <= -2000 && h.param > -3000) {
                 loadUser(mine[(size_t)(-2000 - h.param)]);
@@ -906,7 +977,8 @@ private:
     std::string userName, editName;        // the preset loaded ("" a factory sound); the name being typed
     bool modified = false, renaming = false, fresh = false;
     int deleteArmed = -1;                  // a preset's delete asked once: the second click deletes
-    bool bruddView = false;                // the lower half: the breakers' pads
+    int view = 0;                          // the lower half: 0 the sound's sections, 1 BRUDD's pads, 2 the LAYER
+    bool browserLayer = false;             // the browser picks the layer's sound
     bool learning = false;                 // LEARN on: a click arms a breaker, the next pad hit is its
     int learnArmed = -1;
     ond::PadMap pads;                      // the pads learned (Documents/Ond/pads.txt, and the set's)

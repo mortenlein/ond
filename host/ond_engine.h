@@ -18,6 +18,9 @@ extern "C" {
 void ond_init(void);                       /* power on: defaults, first engine's first preset */
 /* a factory preset, as the FM-1 loads it (ui.c apply_preset_to: sends, arp, voice mode; delay and reverb dry) */
 void ond_load_preset(int engine, int preset);
+/* the layer's sound (Clipper 0.3's LAYER: track 2 under or beside track 1, voice.c layer_*): its own settings (MODE,
+ * SPLIT, OCT, LEVEL, PAN, FILT: the "layer_*" controls) stay as they are */
+void ond_load_layer(int engine, int preset);
 int ond_engine_count(void);
 const char *ond_engine_name(int engine);
 int ond_preset_count(int engine);
@@ -30,11 +33,11 @@ void ond_set_tempo(double bpm);            /* the host's tempo: the arp, a synce
 
 /* the controls the plugin shows: the firmware's own parameters, by stable keys (append-only: saved sets keep
  * them). EDIT 1..8 are the engine's own (name, range, value text as the FM-1 shows them for that engine). */
-enum { OND_SCOPE_GLOBAL, OND_SCOPE_SOUND, OND_SCOPE_EDIT };
+enum { OND_SCOPE_GLOBAL, OND_SCOPE_SOUND, OND_SCOPE_EDIT, OND_SCOPE_LAYER };
 typedef struct {
     const char *key;                       /* "brite", "edit1", "reverb_type" ... */
     const char *label;                     /* the FM-1's ("BRITE", the engine's "DRAW" ...) */
-    const char *section;                   /* "MACROS", "ENGINE", "ENVELOPE", "CHARACTER", "PLAY", "SPACE" */
+    const char *section;                   /* "MACROS", "ENGINE", "ENVELOPE", "CHARACTER", "PLAY", "SPACE", "LAYER" */
     int min, max, def;
     int is_enum;                           /* the values are names (ond_control_text) */
     int scope;                             /* OND_SCOPE_* */

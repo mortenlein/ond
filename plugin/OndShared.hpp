@@ -56,7 +56,7 @@ inline constexpr int FAVOURITES = 8;          // sounds()[0..7]: the baseline ei
 // plugin parameters: 0 SOUND, then the engine's controls (0.1's six first: their ids stay), then Brudd's breaker
 // (held: 0 none, 1..16), what sounds of it (out), the last MIDI in (out), then the meter
 inline const std::vector<int> &paramControls()  // parameter index -> control index (-1 SOUND, -2 meter,
-                                                // -3 breaker, -4 breaker out, -5 MIDI in)
+                                                // -3 breaker, -4 breaker out, -5 MIDI in, -6 layer sound)
 {
     static const std::vector<int> map = [] {
         static const char *const FIRST[] = {"dust", "reverb", "reverb_type", "reverb_size", "delay", "level"};
@@ -72,17 +72,22 @@ inline const std::vector<int> &paramControls()  // parameter index -> control in
         };
         for (const char *k : FIRST)
             m.push_back(find(k));
+        // (ids stay: 0.4's Brudd parameters after 0.3's controls; anything newer after them, at the end)
+        const int newer = find("layer_mode");
         for (int i = 0; i < ond_control_count(); ++i) {
             bool seen = false;
             for (const char *k : FIRST)
                 seen |= find(k) == i;
+            if (i == newer) {
+                m.push_back(-3);
+                m.push_back(-4);
+                m.push_back(-5);
+                m.push_back(-2);
+            }
             if (!seen)
                 m.push_back(i);
         }
-        m.push_back(-3);
-        m.push_back(-4);
-        m.push_back(-5);
-        m.push_back(-2);
+        m.push_back(-6);                        // (0.5) the layer's sound
         return m;
     }();
     return map;
@@ -107,7 +112,7 @@ inline int paramOfKey(const char *key)
     return -1;
 }
 inline constexpr int P_SOUND = 0;
-inline int paramOfCode(int code)            // -2 meter, -3 breaker, -4 breaker out, -5 MIDI in
+inline int paramOfCode(int code)            // -2 meter, -3 breaker, -4 breaker out, -5 MIDI in, -6 layer sound
 {
     for (int i = paramCount() - 1; i >= 0; --i)
         if (paramControls()[(size_t)i] == code)
@@ -119,6 +124,8 @@ inline int breakerParam() { return paramOfCode(-3); }
 inline int breakerOutParam() { return paramOfCode(-4); }
 // the last MIDI in (out, for the screen: LEARN, and what arrives): count % 16 * 4096 + channel * 256 + CC 128 + number
 inline int midiInParam() { return paramOfCode(-5); }
+inline int layerSoundParam() { return paramOfCode(-6); }
+inline constexpr int LAYER_SOUND_DEF = 4;   // sounds()[4]: HYBRID DRONE, as ond_init's layer
 
 // the MPK Mini's pads on channel 10 (docs/controller-mpk-mini.md): bank A (notes 36..43) the hits (Brudd stage 2),
 // bank B (44..51) the breakers, in docs/rhythm-breaks.md's order (the punch-in effects nearest each role):

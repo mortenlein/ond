@@ -97,6 +97,15 @@ protected:
             }
             return;
         }
+        if (c == -6) {
+            p.hints = kParameterIsAutomatable | kParameterIsInteger;
+            p.name = "Layer Sound";
+            p.symbol = "layer_sound";
+            p.ranges.min = 0.f;
+            p.ranges.max = (float)(ond::sounds().size() - 1);
+            p.ranges.def = (float)ond::LAYER_SOUND_DEF;
+            return;
+        }
         if (c == -5) {
             p.hints = kParameterIsOutput | kParameterIsInteger;
             p.name = "MIDI In";
@@ -239,7 +248,9 @@ private:
             {"chorus_depth", "Chorus Depth"}, {"delay", "Delay"}, {"delay_time", "Delay Time"},
             {"delay_feedback", "Delay Feedback"}, {"delay_mode", "Delay Mode"}, {"reverb", "Reverb"},
             {"reverb_type", "Reverb Type"}, {"reverb_size", "Reverb Size"}, {"reverb_damp", "Reverb Damping"},
-            {"level", "Level"}};
+            {"level", "Level"}, {"layer_mode", "Layer Mode"}, {"layer_oct", "Layer Octave"},
+            {"layer_split", "Layer Split"}, {"layer_level", "Layer Level"}, {"layer_pan", "Layer Pan"},
+            {"layer_filter", "Layer Filter"}};
         for (const auto &n : N)
             if (!std::strcmp(n[0], key))
                 return n[1];
@@ -336,6 +347,12 @@ private:
                 else if (!dirty[p])
                     touched[p] = false;             // the new sound's own value from now on
             }
+        }
+        if (dirty[ond::layerSoundParam()].exchange(false)) {   // the layer's sound (its own settings stay)
+            const auto &list = ond::sounds();
+            const size_t i = (size_t)(int)values[ond::layerSoundParam()];
+            const ond::Sound &s = list[i < list.size() ? i : 0];
+            ond_load_layer(s.engine, s.preset);
         }
         for (int p = 1; p < n; ++p) {
             const int c = ond::paramControls()[p];

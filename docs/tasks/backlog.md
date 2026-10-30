@@ -6,7 +6,8 @@
     (Morten picks by ear in the emulator), saved as factory presets.
 004 Bellows: one stage after the organ voices: breath on level first; then tone; then a tiny pitch
     sag. Each as its own change and render.
-005 Drone layer: root + fifth from an existing drone engine under the played part.
+005 Drone layer: root + fifth from an existing drone engine under the played part. (0.5: Clipper's LAYER on the
+    screen, any sound under or beside the main one, refs/005-layer; root + fifth only is still to do.)
 006 Tape: port DUB-1's tape echo (amb.c, "echo: tape and Echoplex") as an FX; then tape stop,
     stutter, freeze as performance actions.
 007 Bad cable: crackle, short dropouts, 50 Hz hum that comes and goes.

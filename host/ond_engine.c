@@ -87,6 +87,20 @@ static void preset_into(track_t *t, uint32_t e, uint32_t pi)
     fm6_track_loaded(t);
 }
 
+/* the layer's own settings: kept over a sound loaded into it (preset_params sets track 2's whole sound) */
+static const uint8_t LAYER_OWN[] = {P_LYMODE, P_LYSPLIT, P_LYOCT, P_LYCH, P_LEVEL, P_PAN, P_TFLT};
+
+static void layer_into(uint32_t e, uint32_t pi)
+{
+    int16_t keep[NELEM(LAYER_OWN)];
+    uint32_t i;
+    for (i = 0; i < NELEM(LAYER_OWN); i++)
+        keep[i] = trk[1].p[LAYER_OWN[i]];
+    preset_into(&trk[1], e, pi);
+    for (i = 0; i < NELEM(LAYER_OWN); i++)
+        trk[1].p[LAYER_OWN[i]] = keep[i];
+}
+
 void ond_init(void)
 {
     uint32_t i, k;
@@ -98,6 +112,20 @@ void ond_init(void)
     song.master_q12 = 4096;
     preset_into(&trk[0], 0, 0);
     trk[0].eng_req = trk[0].engine = 0;
+    trk[1].p[P_LYMODE] = LY_OFF;                /* (as params.c's synth defaults: off, split at C4, octave 0) */
+    trk[1].p[P_LYSPLIT] = 64;
+    trk[1].p[P_LYOCT] = 2;
+    trk[1].p[P_LYCH] = 2;
+    layer_into(12, 18);                         /* (the layer's first sound: HYBRID DRONE, Ond's drone) */
+    trk[1].eng_req = trk[1].engine = 12;
+}
+
+void ond_load_layer(int engine, int preset)
+{
+    uint32_t e = (uint32_t)(engine < 0 ? 0 : engine) % NENGINES;
+    sound_fade_begin(&trk[1]);
+    layer_into(e, (uint32_t)(preset < 0 ? 0 : preset));
+    trk[1].eng_req = (uint8_t)e;
 }
 
 void ond_load_preset(int engine, int preset)
@@ -142,9 +170,18 @@ void ond_set_tempo(double bpm)
 typedef struct {
     const char *key, *section;
     uint8_t scope;
-    uint16_t id;                               /* G_* (global), P_* (sound), 0..7 (EDIT) */
+    uint16_t id;                               /* G_* (global), P_* (sound, layer), 0..7 (EDIT) */
     uint8_t kept;
+    const param_desc_t *desc;                  /* (the layer's: its slots are the pattern's, their TP is not theirs) */
 } ctl_t;
+/* the layer's settings as the FM-1 shows them (ui_synth.c XD[X_LYMODE ..]; MULTI left out: one MIDI channel here) */
+static const char *const N_OCTS5[] = {"-2", "-1", "0", "+1", "+2"};
+static const param_desc_t LY_MODE_D = {"MODE", F_ENUM, LY_OFF, LY_SPLIT, LY_OFF, N_LYMODE, 0};
+static const param_desc_t LY_SPLIT_D = {"SPLIT", F_SPLIT, 16, 127, 64, 0, 0};
+static const param_desc_t LY_OCT_D = {"OCT", F_ENUM, 0, 4, 2, N_OCTS5, 0};
+static const param_desc_t LY_LEVEL_D = {"LEVEL", F_DB, 0, 127, 104, 0, 0};
+static const param_desc_t LY_PAN_D = {"PAN", F_BIPCT, -64, 63, 0, 0, 0};
+static const param_desc_t LY_FILT_D = {"FILT", F_FILT, -64, 63, 0, 0, 0};
 static const ctl_t CTL_TAB[] = {
     {"brite", "MACROS", OND_SCOPE_SOUND, P_MAC1, 0},
     {"timbr", "MACROS", OND_SCOPE_SOUND, P_MAC2, 0},
@@ -192,11 +229,19 @@ static const ctl_t CTL_TAB[] = {
     {"reverb_size", "SPACE", OND_SCOPE_GLOBAL, G_RSIZE, 1},
     {"reverb_damp", "SPACE", OND_SCOPE_GLOBAL, G_RDAMP, 1},
     {"level", "SPACE", OND_SCOPE_SOUND, P_LEVEL, 1},
+    {"layer_mode", "LAYER", OND_SCOPE_LAYER, P_LYMODE, 1, &LY_MODE_D},   /* (Ond 0.5) */
+    {"layer_oct", "LAYER", OND_SCOPE_LAYER, P_LYOCT, 1, &LY_OCT_D},
+    {"layer_split", "LAYER", OND_SCOPE_LAYER, P_LYSPLIT, 1, &LY_SPLIT_D},
+    {"layer_level", "LAYER", OND_SCOPE_LAYER, P_LEVEL, 1, &LY_LEVEL_D},
+    {"layer_pan", "LAYER", OND_SCOPE_LAYER, P_PAN, 1, &LY_PAN_D},
+    {"layer_filter", "LAYER", OND_SCOPE_LAYER, P_TFLT, 1, &LY_FILT_D},
 };
 
 static const param_desc_t *ctl_desc(int c, int engine)
 {
     const ctl_t *k = &CTL_TAB[c];
+    if (k->desc)
+        return k->desc;
     if (k->scope == OND_SCOPE_EDIT)
         return &ENGINES[(uint32_t)(engine < 0 ? 0 : engine) % NENGINES]->edit[k->id];
     return k->scope == OND_SCOPE_GLOBAL ? &GP[k->id] : &TP[k->id];
@@ -230,6 +275,8 @@ void ond_control_set(int c, int v)
     v = clamp(v, d->min, d->max);
     if (k->scope == OND_SCOPE_GLOBAL)
         song.g[k->id] = (int16_t)v;
+    else if (k->scope == OND_SCOPE_LAYER)
+        trk[1].p[k->id] = (int16_t)v;
     else
         trk[0].p[k->scope == OND_SCOPE_EDIT ? P_E0 + k->id : k->id] = (int16_t)v;
 }
@@ -242,6 +289,8 @@ int ond_control_get(int c)
     k = &CTL_TAB[c];
     if (k->scope == OND_SCOPE_GLOBAL)
         return song.g[k->id];
+    if (k->scope == OND_SCOPE_LAYER)
+        return trk[1].p[k->id];
     return trk[0].p[k->scope == OND_SCOPE_EDIT ? P_E0 + k->id : k->id];
 }
 
@@ -271,7 +320,7 @@ int ond_preset_value(int c, int engine, int preset)
     if (c < 0 || c >= ond_control_count())
         return 0;
     k = &CTL_TAB[c];
-    if (k->scope == OND_SCOPE_GLOBAL || k->kept)
+    if (k->scope == OND_SCOPE_GLOBAL || k->scope == OND_SCOPE_LAYER || k->kept)
         return ctl_desc(c, engine)->def;
     preset_params(p, (uint32_t)(engine < 0 ? 0 : engine), (uint32_t)(preset < 0 ? 0 : preset));
     return p[k->scope == OND_SCOPE_EDIT ? P_E0 + k->id : k->id];
