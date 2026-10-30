@@ -9,7 +9,10 @@
  * DIST=d, LEVEL=l, SENDS=c,d,r, SWEEP=1, NOTE=k, OCT=o, PSET=id:v,..., VSWEEP=1, PSWEEP=id:a:b,
  * PRESET=1 (the whole preset: sends, ARP, voice mode), STEPS=n,n,... (a pattern, 0 = rest; see below).
  * TRACKS=DIR: the 4-track test (tracks_demo below): a bass / pad / lead / drums pattern
- * with live recording into DIR (mix + solos), checks, and the cost against one track. */
+ * with live recording into DIR (mix + solos), checks, and the cost against one track.
+ * (Ond) DUST=d: the master DUST (G_DUST 0..127), RTYPE=t: the reverb TYPE (Clipper: 0 ROOM 1 PLATE 2 HALL
+ * 3 SHIMMER), HOLD=1: the CHORD keys held once from 0.1 s to 3 s before the end (the release heard), CHORD=k
+ * then exactly k keys (1..8). */
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/wait.h>
@@ -809,6 +812,8 @@ int main(int argc, char **argv)
         frames = FS * (uint32_t)atoi(getenv("SECS"));
     if (getenv("CHORD"))
         nk = atoi(getenv("CHORD")) > 4 ? (uint32_t)atoi(getenv("CHORD")) : 4u;
+    if (getenv("HOLD"))                                 /* (Ond) HOLD=1: CHORD=k is k keys, 1 without CHORD */
+        nk = getenv("CHORD") && atoi(getenv("CHORD")) > 1 ? (uint32_t)atoi(getenv("CHORD")) : 1u;
     for (i = 0; i < G_COUNT; i++) song.g[i] = GP[i].def;
     for (i = 0; i < P_E0; i++) inst.p[i] = TP[i].def;
     inst.eng_req = inst.engine = (uint8_t)eng;
@@ -855,6 +860,12 @@ int main(int argc, char **argv)
         inst.p[P_SLEN] = (int16_t)c;
         transport_req = 1;
     }
+    if (getenv("DUST"))                                 /* (Ond) DUST=d: the master DUST, 0..127 */
+        song.g[G_DUST] = (int16_t)clamp(atoi(getenv("DUST")), 0, 127);
+#if CLIPPER_SYNTH
+    if (getenv("RTYPE"))                                /* (Ond) RTYPE=t: the reverb TYPE (RT_ROOM .. RT_SHIMMER) */
+        song.g[G_RTYPE] = (int16_t)clamp(atoi(getenv("RTYPE")), RT_ROOM, RT_SHIMMER);
+#endif
     song.master_q12 = 4096;
     if (getenv("TRACKS")) {
         fclose(w);
@@ -879,6 +890,8 @@ int main(int argc, char **argv)
             for (k = 0; k < nk && k < 8u; k++)
                 n |= 1u << K[k];
             fm1_in.notes = (fp > FS / 10 && fp < FS * 3 / 2) ? n : 0;
+            if (getenv("HOLD"))         /* (Ond) held once, released 3 s before the end */
+                fm1_in.notes = (f > FS / 10 && f + 3u * FS < frames) ? n : 0;
         }
         if (getenv("DRUMS") && fp % (FS / 4u) < CTL)   /* kick / closed hat / snare on 8ths */
             drum_on(fp % (FS / 2u) < CTL ? 36u : (fp / (FS / 4u)) % 4u == 3u ? 38u : 42u, 100u);
