@@ -114,10 +114,8 @@ UI_SMALL static void draw_menu(void)
         cv_begin(240, pass ? 95u : 124u, C_BLACK);
         cv_oy = pass ? -124 : 0;
         if (ui.menu == 2) {
-            cv_text(4, 4, &FONT_L, "CLIPPER", C_WHITE);
-            cv_rect(128, 22, 6, 6, TE_COL[3]), cv_rect(136, 16, 6, 12, TE_COL[2]);   /* the sails */
-            cv_rect(144, 10, 6, 18, TE_COL[1]), cv_rect(152, 4, 6, 24, TE_COL[0]);
-            cv_text(4, 36, &FONT_S, "SYNTH, FROM SLOOP + FELUCCA", C_AMB);
+            cv_text(4, 4, &FONT_L, OND_VERSION, C_WHITE);   /* (Ond; Clipper's version below, the editor's) */
+            cv_text(4, 36, &FONT_S, "DRONE ORGAN, FROM CLIPPER", C_AMB);
             cv_text(4, 54, &FONT_S, FELUCCA_VERSION, C_HI);
             cv_text(236 - text_w(&FONT_S, __DATE__), 54, &FONT_S, __DATE__, C_GRAY);   /* build date */
             cv_text(cv_text(4, 72, &FONT_S, "LEO KUROSHITA", C_HI) + 8, 72, &FONT_S, "@KUROGEDELIC", C_AMB);
@@ -127,7 +125,7 @@ UI_SMALL static void draw_menu(void)
 #if FELUCCA_CPU1                                    /* (the host tests include this file without cpu1.c) */
             cv_text(236 - text_w(&FONT_S, cpu1_label()), 119, &FONT_S, cpu1_label(), C_AMB);   /* 2 CORES / 1 CORE */
 #endif
-            cv_text(4, 132, &FONT_S, "GITHUB.COM/ISOD89/CLIPPER-FM1", C_AMB);   /* (the source of this firmware) */
+            cv_text(4, 132, &FONT_S, "GITHUB.COM/MORTENLEIN/OND", C_AMB);   /* (the source of this firmware) */
             cv_text(4, 146, &FONT_S, "FONT: TERMINUS (OFL)", C_DIM);
 #if CLIPPER_SYNTH                                            /* (no built-in samples: the DSP's sources) */
             cv_text(4, 159, &FONT_S, "LADDER: ZAVALISHIN", C_DIM);

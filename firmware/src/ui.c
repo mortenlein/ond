@@ -8,6 +8,9 @@
 #ifndef FELUCCA_VERSION
 #define FELUCCA_VERSION "CLIPPER 1.3"  /* the synthesizer firmware for the FM-1 (from SLOOP 2.5, based on Felucca) */
 #endif
+#ifndef OND_VERSION                    /* (Ond) the name on the screen; FELUCCA_VERSION stays Clipper's: the editor */
+#define OND_VERSION "OND 0.1"          /* knows the synth and its backup format by it (web/editor.html bkDevFormat) */
+#endif
 static void project_save(uint32_t slot);
 static void arrangement_save(void);
 static void panel_setup(void);
