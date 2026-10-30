@@ -51,8 +51,10 @@ inline const std::vector<Sound> &sounds()
 
 inline constexpr int FAVOURITES = 8;          // sounds()[0..7]: the baseline eight
 
-// plugin parameters: 0 SOUND, then the engine's controls (0.1's six first: their ids stay), then the meter
-inline const std::vector<int> &paramControls()  // parameter index -> control index (-1: SOUND, -2: meter)
+// plugin parameters: 0 SOUND, then the engine's controls (0.1's six first: their ids stay), then Brudd's breaker
+// (held: 0 none, 1..16) and what sounds of it (out), then the meter
+inline const std::vector<int> &paramControls()  // parameter index -> control index (-1 SOUND, -2 meter,
+                                                // -3 breaker, -4 breaker out)
 {
     static const std::vector<int> map = [] {
         static const char *const FIRST[] = {"dust", "reverb", "reverb_type", "reverb_size", "delay", "level"};
@@ -75,6 +77,8 @@ inline const std::vector<int> &paramControls()  // parameter index -> control in
             if (!seen)
                 m.push_back(i);
         }
+        m.push_back(-3);
+        m.push_back(-4);
         m.push_back(-2);
         return m;
     }();
@@ -101,6 +105,14 @@ inline int paramOfKey(const char *key)
 }
 inline constexpr int P_SOUND = 0;
 inline int meterParam() { return paramCount() - 1; }
+inline int breakerParam() { return paramCount() - 3; }
+inline int breakerOutParam() { return paramCount() - 2; }
+
+// the MPK Mini's pads on channel 10 (docs/controller-mpk-mini.md): bank A (notes 36..43) the hits (Brudd stage 2),
+// bank B (44..51) the breakers, in docs/rhythm-breaks.md's order (the punch-in effects nearest each role):
+// stutter, tape stop, dropout (GATE), crush, half speed, reverse, freeze (a beat held: LOOP 4), echo
+inline constexpr int PAD_B_FIRST = 44;
+inline constexpr int PAD_B[8] = {4, 6, 13, 11, 7, 5, 0, 14};
 
 // EDIT 1..8 change range with the engine: the host sees them as 0..1, mapped onto the engine's range
 inline int editValue(float x, const ond_control_t &c)

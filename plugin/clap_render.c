@@ -3,7 +3,8 @@
 /* A minimal CLAP host for testing the built plugin on Windows, without a DAW: loads Ond.clap, sets SOUND and DUST,
  * holds C4 E4 G4 from 0.1 s to 9 s (as tools/render_refs.sh), 12 s in all, at RATE, and writes a 16-bit WAV.
  * A second instance is made, activated and run alongside: it must stay silent (one engine per process).
- *   clap_render PLUGIN.clap OUT.wav [RATE [SOUND [DUST [NAME=VALUE ...]]]]   (NAME: a parameter's name) */
+ *   clap_render PLUGIN.clap OUT.wav [RATE [SOUND [DUST [NAME=VALUE | @SECONDS:NAME=VALUE ...]]]]
+ * (NAME: a parameter's name; @SECONDS: set at that time, e.g. @4.0:Breaker=7 @6.0:Breaker=0) */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -112,15 +113,23 @@ int main(int argc, char **argv)
             if (!f) {
                 add_param(&el, param_id(pl[c], "Sound"), sound);
                 add_param(&el, param_id(pl[c], "Dust"), dust);
-                for (int a = 6; a < argc && el.n < MAXEV - 6u; a++) {
-                    char name[64];
-                    const char *eq = strchr(argv[a], '=');
-                    if (!eq || eq - argv[a] >= (int)sizeof name)
+            }
+            for (int a = 6; a < argc && el.n < MAXEV - 6u; a++) {
+                char name[64];
+                const char *arg = argv[a], *eq;
+                uint32_t at = 0;
+                if (arg[0] == '@') {            /* @SECONDS:NAME=VALUE */
+                    at = (uint32_t)(atof(arg + 1) * rate);
+                    if (!(arg = strchr(arg, ':')))
                         continue;
-                    memcpy(name, argv[a], (size_t)(eq - argv[a]));
-                    name[eq - argv[a]] = 0;
-                    add_param(&el, param_id(pl[c], name), atof(eq + 1));
+                    arg++;
                 }
+                if (at < f || at >= f + n || !(eq = strchr(arg, '=')) || eq - arg >= (int)sizeof name)
+                    continue;
+                memcpy(name, arg, (size_t)(eq - arg));
+                name[eq - arg] = 0;
+                add_param(&el, param_id(pl[c], name), atof(eq + 1));
+                el.ev[el.n - 1].h.time = at - f;
             }
             if (on >= f && on < f + n)
                 add_note(&el, on - f, CLAP_EVENT_NOTE_ON, 60), add_note(&el, on - f, CLAP_EVENT_NOTE_ON, 64),

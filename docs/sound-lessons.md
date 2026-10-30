@@ -52,3 +52,19 @@ upstream repos (clipper-fm1, fm1-fomni, fm1-dub), all GPL-3.0.
 ## Gaps (ours to build)
 - No firmware has a real free-reed harmonium voice; Clipper's REED is drawbar sines.
 - No bellows. No bad-cable stage. No prism harmoniser.
+
+## 8. Breaking it up without losing the groove (Brudd)
+- `clipper-fm1/firmware/src/punch.c` (SLOOP's punch-in FX, off in Clipper's synth for memory): 16 effects on the
+  whole mix while held. A mono ring of the mix (32768 samples, 0.74 s, stored /8) feeds the loops (a beat / 2 /
+  4 / 8), STUTTER, REVERSE, STOP (speed falls to zero over one beat), HALF (every sample twice), WOBBLE (4 Hz,
+  ±180 samples around 700) and ECHO (3/4 beat, feedback 18000/4096 of /8); LOW / HIGH sweep (~1 s), PHONE
+  (500 Hz–2.5 kHz, soft clip), CRUSH (11 bits off), ALIAS (hold 8), GATE (16ths, half open). Loops snap to the
+  running transport's grid (from the last division, or the next if it is within 1536 samples). Every change
+  crossfades over 64 samples (512 a sample in Q15). The instrument keeps playing underneath: let go and it is
+  where the groove is now ("slip").
+- `fm1-dub/firmware/src/dsp/amb.c` (github.com/sbegueria/fm1-dub): Stutter catches the next 16th from the
+  press (`FS·60/(bpm·4)`, 1000..7100 samples), mono, loops it with 64-sample edges; the mix to it and back is a
+  one-pole of 0.005 a sample (~4.5 ms). Tape stop slows the *echo's* tape to a quarter speed, easing in over
+  0.7 s and out over 0.25 s. Freeze holds the granular cloud (`fx_cf`, 0.1 s ease).
+- A turntable regaining speed, for a CATCH: Technics SL-1200 MK2, 0.7 s to reach 33 1/3 rpm (its published
+  starting characteristics).

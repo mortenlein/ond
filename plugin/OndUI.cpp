@@ -61,7 +61,8 @@ struct Hit {
     float x, y, w, h;
     int param;                     // >= 0 a knob; -10 previous, -11 next, -12 the browser, -20 SAVE, -21 SAVE AS;
                                    // the browser: -100 OND, -101 MINE, -200-e an engine, -1000-i a sound,
-                                   // -2000-k my preset k, -3000-k delete it, -30 RENAME, -31 the folder
+                                   // -2000-k my preset k, -3000-k delete it, -30 RENAME, -31 the folder;
+                                   // -22 the BRUDD view, -4000-i breaker i's pad
 };
 
 } // namespace
@@ -108,7 +109,10 @@ protected:
             drawBrowser();
         else
             for (const Section &s : sections())
-                drawSection(s);
+                if (!bruddView || s.y < 300.f)
+                    drawSection(s);
+        if (bruddView && !browserOpen)
+            drawBrudd();
         restore();
     }
 
@@ -119,6 +123,12 @@ protected:
         if (ev.button != 1)
             return false;
         if (!ev.press) {
+            if (padDown >= 0) {                      // a pad let go: the groove comes back
+                setValue(ond::breakerParam(), 0.f, false);
+                editParameter((uint32_t)ond::breakerParam(), false);
+                padDown = -1;
+                repaint();
+            }
             if (drag >= 0) {
                 if (!moved && isEnum(drag)) {
                     stepValue(drag, 1);              // a click on a named value: the next one
@@ -145,6 +155,12 @@ protected:
                 saveCurrent();
             } else if (h.param == -21) {
                 saveAs();
+            } else if (h.param == -22) {
+                bruddView = !bruddView;
+            } else if (h.param <= -4000) {
+                padDown = -4000 - h.param;           // held while the button is
+                editParameter((uint32_t)ond::breakerParam(), true);
+                setValue(ond::breakerParam(), (float)(padDown + 1), false);
             } else if (h.param >= 0) {
                 if (ev.time - lastClick < 350 && lastParam == h.param) {
                     resetValue(h.param);             // double click: as the sound has it
@@ -567,8 +583,9 @@ private:
             fill(bx + 44.f + tw + 2.f, by + 19.f, 3.f, 30.f, ACCENT);
         button(632.f, by, 64.f, bh, "SAVE", !userName.empty() && modified, -20);
         button(704.f, by, 84.f, bh, "SAVE AS", false, -21);
+        button(796.f, by, 76.f, bh, "BRUDD", bruddView, -22);
         // the output: a bar that breathes with the sound
-        const float mx = 804.f, mw = 172.f, my = 34.f, m = vals[(size_t)ond::meterParam()];
+        const float mx = 884.f, mw = 92.f, my = 34.f, m = vals[(size_t)ond::meterParam()];
         const float db = m > 1e-5f ? 20.f * std::log10(m) : -100.f, k = std::fmax(0.f, std::fmin(1.f, (db + 60.f) / 60.f));
         pixelText(mx, 12.f, "OUT", DIM);
         pixelText(mx + mw, 12.f, "0.3", FAINT, 1.f, 1);
@@ -577,6 +594,31 @@ private:
             fill(mx, my, mw * k, 6.f, db > -6.f ? ACCENT : TEXT, db > -6.f ? 1.f : 0.75f, 3.f);
         if (renaming)
             pixelText(bx + bw, by + bh + 4.f, "TYPE A NAME, ENTER", FAINT, 1.f, 1);
+    }
+
+    // Brudd's breakers (docs/rhythm-breaks.md): hold a pad, the whole mix breaks; let go, the groove is back where
+    // it is now. The MPK's bank B pads (channel 10, notes 44..51) are marked with their number
+    void drawBrudd()
+    {
+        const float x0 = 16.f, y0 = 336.f, w = 968.f, h = 348.f;
+        fill(x0, y0, w, h, PANEL, 1.f, 6.f);
+        pixelText(x0 + 14.f, y0 + 10.f, "BRUDD", DIM);
+        pixelText(x0 + w - 14.f, y0 + 10.f, "HOLD A PAD. LET GO: BACK IN THE GROOVE", FAINT, 1.f, 1);
+        const int n = ond_breaker_count(), playing = (int)std::lround(vals[(size_t)ond::breakerOutParam()]) - 1;
+        const float gap = 10.f, pw = (w - 28.f - 7.f * gap) / 8.f, ph = (h - 50.f - gap) / 2.f;
+        for (int i = 0; i < n; ++i) {
+            const float px = x0 + 14.f + (pw + gap) * (float)(i % 8), py = y0 + 36.f + (ph + gap) * (float)(i / 8);
+            const bool on = playing == i || padDown == i;
+            fill(px, py, pw, ph, on ? ACCENT : KNOB, on ? (playing == i ? 0.85f : 0.4f) : 1.f, 6.f);
+            pixelText(px + pw / 2.f, py + ph / 2.f - 8.f, ond_breaker_name(i), on ? BG : TEXT, 1.f, 0);
+            for (int k = 0; k < 8; ++k)
+                if (ond::PAD_B[k] == i) {
+                    char tag[8];
+                    std::snprintf(tag, sizeof tag, "PAD %d", k + 1);
+                    pixelText(px + 10.f, py + 8.f, tag, on ? BG : FAINT);
+                }
+            hits.push_back({px, py, pw, ph, -4000 - i});
+        }
     }
 
     void drawSection(const Section &s)
@@ -811,6 +853,8 @@ private:
     std::string userName, editName;        // the preset loaded ("" a factory sound); the name being typed
     bool modified = false, renaming = false, fresh = false;
     int deleteArmed = -1;                  // a preset's delete asked once: the second click deletes
+    bool bruddView = false;                // the lower half: the breakers' pads
+    int padDown = -1;                      // the pad held with the mouse
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OndUI)
 };

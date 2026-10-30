@@ -5,7 +5,12 @@
  * A mono ring of the mix (PUNCH_N samples, 0.74 s) feeds the loops, reverse, tape stop,
  * half speed, wobble and echo; the filters, crush and gate run in stereo. Every change
  * crossfades over 64 samples. Runs in the audio ISR (mix_block, fx.c). */
-#if CLIPPER_SYNTH                         /* Clipper: no punch-in effects (no FX layer): the ring's 64 KB go to the
+/* (Ond) OND_PUNCH 1: the punch-in effects back in the synth, as Brudd's breakers, where there is memory for the
+ * ring: the desktop builds (host/ond_engine.c). The FM-1 build stays as Clipper's. */
+#ifndef OND_PUNCH
+#define OND_PUNCH 0
+#endif
+#if CLIPPER_SYNTH && !OND_PUNCH           /* Clipper: no punch-in effects (no FX layer): the ring's 64 KB go to the
                                            * plate reverb and the wavetables; punch_process passes the mix through */
 #define PUNCH_N 2048u
 #else
@@ -135,7 +140,7 @@ static void punch_process(int32_t *l, int32_t *r, uint32_t n)
     int32_t want = punch.req;
     uint32_t beat, step, echo_d;
     tsvf_t c1, c2;
-    if (CLIPPER_SYNTH)
+    if (CLIPPER_SYNTH && !OND_PUNCH)
         return;
     if (punch.cur < 0 && want < 0) {                   /* idle: only the ring */
         for (i = 0; i < n; i++)

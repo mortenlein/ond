@@ -75,6 +75,22 @@ protected:
             p.ranges.def = 0.f;
             return;
         }
+        if (c == -3 || c == -4) {               // Brudd: the breaker held (the screen's pads, automation)
+            p.hints = c == -3 ? kParameterIsAutomatable | kParameterIsInteger : kParameterIsOutput | kParameterIsInteger;
+            p.name = c == -3 ? "Breaker" : "Breaker Playing";
+            p.symbol = c == -3 ? "breaker" : "breaker_out";
+            p.ranges.min = 0.f, p.ranges.max = (float)ond_breaker_count(), p.ranges.def = 0.f;
+            if (c == -3) {
+                ParameterEnumerationValue *ev = new ParameterEnumerationValue[ond_breaker_count() + 1];
+                ev[0].value = 0.f, ev[0].label = "OFF";
+                for (int i = 0; i < ond_breaker_count(); ++i)
+                    ev[i + 1].value = (float)(i + 1), ev[i + 1].label = ond_breaker_name(i);
+                p.enumValues.count = (uint8_t)(ond_breaker_count() + 1);
+                p.enumValues.restrictedMode = true;
+                p.enumValues.values = ev;
+            }
+            return;
+        }
         if (c == -2) {
             p.hints = kParameterIsOutput;
             p.name = "Meter";
@@ -121,7 +137,7 @@ protected:
 
     void setParameterValue(uint32_t index, float value) override
     {
-        if (index >= (uint32_t)ond::paramCount() || (int)index == ond::meterParam())
+        if (index >= (uint32_t)ond::paramCount() || (int)index == ond::meterParam() || (int)index == ond::breakerOutParam())
             return;
         values[index] = value;
         touched[index] = true;                  // set by the host or the screen: not the sound's own any more
@@ -141,6 +157,8 @@ protected:
         resampler.setup(OND_FS, getSampleRate());
         blockPos = OND_BLOCK;
         meter = 0.f;
+        padsHeld = 0;
+        breakerNow = -1;
     }
 
     void deactivate() override
@@ -168,7 +186,8 @@ protected:
         while (done < frames) {
             for (; e < evCount && ev[e].frame <= done; ++e)
                 if (ev[e].size <= 3u)
-                    ond_midi(ev[e].data[0], ev[e].size > 1u ? ev[e].data[1] : 0, ev[e].size > 2u ? ev[e].data[2] : 0);
+                    midiIn(ev[e].data[0], ev[e].size > 1u ? ev[e].data[1] : 0, ev[e].size > 2u ? ev[e].data[2] : 0);
+            updateBreaker();
             const uint32_t next = e < evCount && ev[e].frame < frames ? ev[e].frame : frames;
             for (; done < next; ++done) {
                 if (resampler.isBypass()) {
@@ -188,6 +207,7 @@ protected:
             peak = std::fmax(peak, std::fmax(std::fabs(outL[i]), std::fabs(outR[i])));
         meter = std::fmax(peak, meter * std::pow(0.1f, (float)frames / (float)getSampleRate()));
         values[ond::meterParam()] = meter;
+        values[ond::breakerOutParam()] = (float)(ond_breaker_playing() + 1);
     }
 
 private:
@@ -210,6 +230,41 @@ private:
             if (!std::strcmp(n[0], key))
                 return n[1];
         return key;
+    }
+
+    // channel 10 is Brudd's (docs/controller-mpk-mini.md: it never plays the organ): bank B's pads hold a
+    // breaker (the last pressed wins; let go, the one held before it again); bank A waits for the hits
+    void midiIn(uint8_t st, uint8_t d1, uint8_t d2)
+    {
+        if ((st & 0x0Fu) != 9u) {
+            ond_midi(st, d1, d2);
+            return;
+        }
+        const int pad = (int)d1 - ond::PAD_B_FIRST;
+        if ((st & 0xF0u) != 0x90u && (st & 0xF0u) != 0x80u)
+            return;
+        if (pad < 0 || pad >= 8)
+            return;
+        const bool on = (st & 0xF0u) == 0x90u && d2 > 0;
+        for (int i = 0; i < padsHeld; ++i)       // (out of the stack wherever it is)
+            if (padStack[i] == pad) {
+                for (int k = i; k + 1 < padsHeld; ++k)
+                    padStack[k] = padStack[k + 1];
+                --padsHeld;
+                break;
+            }
+        if (on && padsHeld < 8)
+            padStack[padsHeld++] = pad;
+    }
+
+    void updateBreaker()                        // the pads first, else the parameter (the screen, automation)
+    {
+        const int param = (int)std::lround(values[ond::breakerParam()].load()) - 1;
+        const int want = padsHeld ? ond::PAD_B[padStack[padsHeld - 1]] : param;
+        if (want != breakerNow) {
+            breakerNow = want;
+            ond_breaker(want);
+        }
     }
 
     void engineSample(float &l, float &r)
@@ -274,6 +329,7 @@ private:
     float blockL[OND_BLOCK], blockR[OND_BLOCK];
     uint32_t blockPos = OND_BLOCK;
     float meter = 0.f;
+    int padStack[8] = {}, padsHeld = 0, breakerNow = -1;
     bool owner = false;
     String userPreset;
 

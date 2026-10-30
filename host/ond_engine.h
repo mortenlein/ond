@@ -47,6 +47,13 @@ int ond_control_get(int c);
 void ond_control_text(int c, int engine, int value, char *buf, int size);   /* "HALL", "40%", "1.2s" */
 int ond_preset_value(int c, int engine, int preset);   /* what the control is once that preset loads */
 
+/* Brudd's breakers (docs/rhythm-breaks.md): SLOOP's punch-in effects on the whole mix, held: 0..count-1 or -1
+ * (none). Let go, the mix comes back where it is now (the instrument never stopped underneath) */
+int ond_breaker_count(void);
+const char *ond_breaker_name(int i);     /* "STUTTER", "STOP", "HALF" ... (pure) */
+void ond_breaker(int i);
+int ond_breaker_playing(void);           /* the one sounding (fading out included), -1 none */
+
 /* n frames (a multiple of OND_BLOCK) of stereo at OND_FS, -1..1 */
 void ond_render(float *left, float *right, uint32_t n);
 

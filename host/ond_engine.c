@@ -8,6 +8,7 @@
 #ifndef CLIPPER_SYNTH
 #define CLIPPER_SYNTH 1
 #endif
+#define OND_PUNCH 1                     /* the punch-in effects as Brudd's breakers (punch.c: the ring's 64 KB) */
 #ifndef __GNUC__
 #define __attribute__(x)                /* (MSVC: the firmware's section / alignment attributes) */
 #endif
@@ -275,6 +276,12 @@ int ond_preset_value(int c, int engine, int preset)
     preset_params(p, (uint32_t)(engine < 0 ? 0 : engine), (uint32_t)(preset < 0 ? 0 : preset));
     return p[k->scope == OND_SCOPE_EDIT ? P_E0 + k->id : k->id];
 }
+
+/* ---- Brudd's breakers: SLOOP's punch-in effects (punch.c) on the whole mix, one at a time while held */
+int ond_breaker_count(void) { return (int)PUNCH_NFX; }
+const char *ond_breaker_name(int i) { return i >= 0 && i < (int)PUNCH_NFX ? PUNCH_NAME[i] : ""; }
+void ond_breaker(int i) { punch.req = (int8_t)(i >= 0 && i < (int)PUNCH_NFX ? i : -1); }
+int ond_breaker_playing(void) { return punch.cur; }
 
 void ond_render(float *l, float *r, uint32_t n)
 {
