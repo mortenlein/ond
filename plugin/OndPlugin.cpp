@@ -19,7 +19,7 @@ std::atomic<void *> gOwner{nullptr};
 class OndPlugin : public Plugin {
 public:
     OndPlugin()
-        : Plugin((uint32_t)ond::paramCount(), 0, 0),
+        : Plugin((uint32_t)ond::paramCount(), 0, 1),
           values(new std::atomic<float>[(size_t)ond::paramCount()]),
           dirty(new std::atomic<bool>[(size_t)ond::paramCount()]),
           touched(new std::atomic<bool>[(size_t)ond::paramCount()])
@@ -43,7 +43,25 @@ protected:
     const char *getMaker() const override { return "Morten Lein"; }
     const char *getHomePage() const override { return "https://github.com/mortenlein/ond"; }
     const char *getLicense() const override { return "GPL-3.0-only"; }
-    uint32_t getVersion() const override { return d_version(0, 2, 0); }
+    uint32_t getVersion() const override { return d_version(0, 3, 0); }
+
+    // "preset": the player's preset loaded on the screen (its name; "" a factory sound), kept with the Live set
+    // so the screen shows it again. The sound itself is in the parameters.
+    void initState(uint32_t index, State &state) override
+    {
+        if (index != 0)
+            return;
+        state.key = "preset";
+        state.defaultValue = "";
+        state.label = "Preset";
+        state.hints = 0;
+    }
+    String getState(const char *key) const override { return std::strcmp(key, "preset") ? String() : userPreset; }
+    void setState(const char *key, const char *value) override
+    {
+        if (!std::strcmp(key, "preset"))
+            userPreset = value;
+    }
 
     void initParameter(uint32_t index, Parameter &p) override
     {
@@ -257,6 +275,7 @@ private:
     uint32_t blockPos = OND_BLOCK;
     float meter = 0.f;
     bool owner = false;
+    String userPreset;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OndPlugin)
 };

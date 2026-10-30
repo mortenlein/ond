@@ -16,7 +16,8 @@ dpf_add_plugin(Ond
       OndPlugin.cpp
       ${OND_ROOT}/host/ond_engine.c
   FILES_UI
-      OndUI.cpp)
+      OndUI.cpp
+      OndPresets.cpp)
 
 # (DPF's opengl UI adds its Windows WebView though USE_WEB_VIEW is off: its if() sees the generator expression as
 # true. We have no web view; the file does not build with llvm-mingw's headers. Left out.)
@@ -43,4 +44,7 @@ if(WIN32)
   # one self-contained DLL: no libc++ / libunwind DLLs beside it for Live to look for
   target_link_options(Ond-vst3 PRIVATE -static)
   target_link_options(Ond-clap PRIVATE -static)
+  # the presets' folder (OndPresets.cpp: Documents, Explorer)
+  target_link_libraries(Ond-vst3 PRIVATE shell32 ole32 uuid)
+  target_link_libraries(Ond-clap PRIVATE shell32 ole32 uuid)
 endif()

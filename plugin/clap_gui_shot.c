@@ -2,8 +2,9 @@
  * Copyright (C) 2026 Morten Lein */
 /* Screenshots of the plugin's screen without a DAW: loads Ond.clap, opens its GUI in a window of its own, saves
  * it as PREFIX_0.bmp, then for each X,Y given (the screen's own 1000 x 640 coordinates) clicks there and saves
- * PREFIX_1.bmp, PREFIX_2.bmp ... The window shows for about a second a shot.
- *   clap_gui_shot PLUGIN.clap PREFIX [X,Y ...] */
+ * PREFIX_1.bmp, PREFIX_2.bmp ... The window shows for about a second a shot. type:TEXT types TEXT, key:enter /
+ * key:esc presses that key (a shot after each too).
+ *   clap_gui_shot PLUGIN.clap PREFIX [X,Y | type:TEXT | key:enter | key:esc ...] */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -148,13 +149,29 @@ int main(int argc, char **argv)
     for (k = 3; k < argc; k++) {
         int x, y;
         float sf = (float)w / 1000.f;
-        if (sscanf(argv[k], "%d,%d", &x, &y) != 2)
+        HWND to = child ? child : win;
+        if (!strncmp(argv[k], "type:", 5)) {
+            for (const char *c = argv[k] + 5; *c; c++) {
+                PostMessageA(to, WM_CHAR, (WPARAM)(unsigned char)*c, 1);
+                pump(30);
+            }
+            pump(400);
+        } else if (!strncmp(argv[k], "key:", 4)) {
+            WPARAM vk = !strcmp(argv[k] + 4, "enter") ? VK_RETURN : VK_ESCAPE;
+            PostMessageA(to, WM_KEYDOWN, vk, 1);
+            PostMessageA(to, WM_CHAR, vk == VK_RETURN ? 13 : 27, 1);
+            pump(30);
+            PostMessageA(to, WM_KEYUP, vk, 0xC0000001);
+            pump(400);
+        } else if (sscanf(argv[k], "%d,%d", &x, &y) == 2) {
+            x = (int)(x * sf), y = (int)(y * sf);
+            PostMessageA(to, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(x, y));
+            pump(60);
+            PostMessageA(to, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
+            pump(700);
+        } else {
             continue;
-        x = (int)(x * sf), y = (int)(y * sf);
-        PostMessageA(child ? child : win, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(x, y));
-        pump(60);
-        PostMessageA(child ? child : win, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
-        pump(700);
+        }
         snprintf(out, sizeof out, "%s_%d.bmp", prefix, k - 2);
         save_bmp(win, out);
     }

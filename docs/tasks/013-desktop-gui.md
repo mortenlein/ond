@@ -39,3 +39,14 @@ text from the firmware's tables and `param_format`). New sound stages (bellows, 
   screen set goes over it.
 - Every control reaches the engine (renders differ), except BRITE / TIMBR on WHEEL: the drawbar organ has no
   cutoff or shape for them (the FM-1 is the same).
+
+## 0.3: the player's presets
+
+- SAVE AS: the sound and every control as a preset, named after the sound ("CHAPEL 2"); type to rename it
+  (Enter). SAVE: over the preset loaded (lit once something changed; the name shows `*`).
+- Files: `Documents/Ond/Presets/<name>.ondpreset`, text: the sound by its engine's and preset's names, every
+  control by its key. `OND_PRESET_DIR` points elsewhere (tests).
+- The browser: MINE first (rename, delete with a second click, open the folder). `<` `>` step through my
+  presets while one is loaded. The Live set keeps which preset was loaded (plugin state `preset`).
+- Checked with `clap_gui_shot` (save as, type a name, change, save, browse, delete asked, load in a fresh
+  instance) in a test folder. Sound unchanged (baseline renders, within 1 LSB).

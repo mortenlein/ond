@@ -4,6 +4,7 @@
 // character, play and space sections. Every label and value is the FM-1's (the firmware's names and
 // param_format, ond_control_text), drawn in the FM-1's own pixel font (Terminus, build/gen/felucca_font.h).
 #include "DistrhoUI.hpp"
+#include "OndPresets.hpp"
 #include "OndShared.hpp"
 #include <algorithm>
 #include <cmath>
@@ -58,7 +59,9 @@ const std::vector<Section> &sections()
 
 struct Hit {
     float x, y, w, h;
-    int param;                     // >= 0 a knob; -10 previous sound, -11 next, -12 the browser
+    int param;                     // >= 0 a knob; -10 previous, -11 next, -12 the browser, -20 SAVE, -21 SAVE AS;
+                                   // the browser: -100 OND, -101 MINE, -200-e an engine, -1000-i a sound,
+                                   // -2000-k my preset k, -3000-k delete it, -30 RENAME, -31 the folder
 };
 
 } // namespace
@@ -72,6 +75,7 @@ public:
         setGeometryConstraints((uint)(W * sf), (uint)(H * sf), true);
         if (sf != 1.0)
             setSize((uint)(W * sf), (uint)(H * sf));
+        mine = ond::listPresets();
     }
 
 protected:
@@ -80,6 +84,15 @@ protected:
         if (index >= vals.size() || vals[index] == value)
             return;
         vals[index] = value;
+        repaint();
+    }
+
+    void stateChanged(const char *key, const char *value) override
+    {
+        if (std::strcmp(key, "preset"))
+            return;
+        userName = value;                  // (a Live set opened: the preset it had; whether it was changed since
+        modified = false;                  // is not known: shown as saved)
         repaint();
     }
 
@@ -107,29 +120,35 @@ protected:
             return false;
         if (!ev.press) {
             if (drag >= 0) {
-                if (!moved && isEnum(drag))
+                if (!moved && isEnum(drag)) {
                     stepValue(drag, 1);              // a click on a named value: the next one
+                    touch();
+                }
                 editParameter((uint32_t)drag, false);
                 drag = -1;
                 repaint();
             }
             return true;
         }
+        if (renaming)
+            finishRename(true);                      // a click anywhere: the name as typed
         if (browserOpen)
             return browserClick(x, y);
         for (const Hit &h : hits) {
             if (x < h.x || x >= h.x + h.w || y < h.y || y >= h.y + h.h)
                 continue;
             if (h.param == -10 || h.param == -11) {
-                const int n = (int)ond::sounds().size();
-                selectSound((soundIndex() + (h.param == -11 ? 1 : n - 1)) % n);
+                step(h.param == -11 ? 1 : -1);
             } else if (h.param == -12) {
-                browserOpen = true;
-                browserEngine = currentEngine();
-                browserFav = soundIndex() < ond::FAVOURITES;
+                openBrowser();
+            } else if (h.param == -20) {
+                saveCurrent();
+            } else if (h.param == -21) {
+                saveAs();
             } else if (h.param >= 0) {
                 if (ev.time - lastClick < 350 && lastParam == h.param) {
                     resetValue(h.param);             // double click: as the sound has it
+                    touch();
                     lastClick = 0;
                     return true;
                 }
@@ -149,8 +168,10 @@ protected:
             return false;
         const float sf = (float)getWidth() / W;
         const float dy = dragY - (float)ev.pos.getY() / sf;
-        if (std::fabs(dy) > 2.f)
+        if (std::fabs(dy) > 2.f && !moved) {
             moved = true;
+            touch();
+        }
         if (!moved)
             return true;
         ond_control_t info;
@@ -181,6 +202,7 @@ protected:
                 editParameter((uint32_t)h.param, true);
                 stepValue(h.param, ev.delta.getY() > 0 ? 1 : -1);
                 editParameter((uint32_t)h.param, false);
+                touch();
                 return true;
             }
         return false;
@@ -188,12 +210,43 @@ protected:
 
     bool onKeyboard(const KeyboardEvent &ev) override
     {
-        if (ev.press && ev.key == kKeyEscape && browserOpen) {
+        if (!ev.press)
+            return renaming;
+        if (renaming) {
+            if (ev.key == kKeyEnter || ev.key == kKeyEscape)
+                finishRename(ev.key == kKeyEnter);
+            else if (ev.key == kKeyBackspace) {
+                if (fresh)
+                    editName.clear();
+                else if (!editName.empty())
+                    editName.pop_back();
+                fresh = false;
+                repaint();
+            }
+            return true;                    // typing a name: the keys are ours, not Live's
+        }
+        if (ev.key == kKeyEscape && browserOpen) {
             browserOpen = false;
             repaint();
             return true;
         }
         return false;
+    }
+
+    bool onCharacterInput(const CharacterInputEvent &ev) override
+    {
+        if (!renaming)
+            return false;
+        const uint c = ev.character;
+        if (c >= 32u && c < 127u && c != '=') {
+            if (fresh)
+                editName.clear();               // the first key replaces the offered name
+            fresh = false;
+            if (editName.size() < 24u)
+                editName += (char)c;
+            repaint();
+        }
+        return true;
     }
 
 private:
@@ -266,10 +319,151 @@ private:
         setInt(param, info.kept ? info.def : ond_preset_value(c, s.engine, s.preset));
     }
 
+    // ---- the player's presets (OndPresets.hpp)
+    void touch()                           // a knob changed by hand: the preset loaded is not what sounds
+    {
+        if (!userName.empty() && !modified) {
+            modified = true;
+            repaint();
+        }
+    }
+
+    void setUser(const std::string &name)
+    {
+        userName = name;
+        modified = false;
+        setState("preset", name.c_str());
+    }
+
+    int mineIndex() const
+    {
+        for (size_t k = 0; k < mine.size(); ++k)
+            if (mine[k] == userName)
+                return (int)k;
+        return -1;
+    }
+
+    void step(int dir)                     // < >: through my presets while one is loaded, else the sounds
+    {
+        const int k = mineIndex();
+        if (k >= 0 && !mine.empty()) {
+            loadUser(mine[(size_t)((k + dir + (int)mine.size()) % (int)mine.size())]);
+            return;
+        }
+        const int n = (int)ond::sounds().size();
+        selectSound((soundIndex() + dir + n) % n);
+    }
+
+    void openBrowser()
+    {
+        mine = ond::listPresets();         // (files added or removed outside since)
+        browserOpen = true;
+        browserEngine = currentEngine();
+        browserGroup = mineIndex() >= 0 ? 1 : soundIndex() < ond::FAVOURITES ? 0 : 2;
+        deleteArmed = -1;
+    }
+
+    // what sounds now, as a preset: the sound, then every control's value (the firmware's)
+    ond::UserPreset capture(const std::string &name) const
+    {
+        ond::UserPreset p;
+        const ond::Sound &s = ond::sounds()[(size_t)soundIndex()];
+        p.name = name;
+        p.engine = ond_engine_name(s.engine);
+        p.preset = ond_preset_name(s.engine, s.preset);
+        for (int i = 1; i < ond::paramCount(); ++i) {
+            const int c = ond::paramControls()[(size_t)i];
+            if (c < 0)
+                continue;
+            ond_control_t info;
+            ond_control_info(c, s.engine, &info);
+            p.values[info.key] = intValue(i);
+        }
+        return p;
+    }
+
+    void saveCurrent()                     // SAVE: over the preset loaded (a factory sound: as a new one)
+    {
+        if (userName.empty()) {
+            saveAs();
+            return;
+        }
+        if (ond::savePreset(capture(userName)))
+            modified = false;
+        repaint();
+    }
+
+    void saveAs()                          // SAVE AS: a new preset, named after the sound; type to rename it
+    {
+        const ond::Sound &s = ond::sounds()[(size_t)soundIndex()];
+        const std::string base = userName.empty() ? ond_preset_name(s.engine, s.preset) : userName;
+        const std::string name = ond::freeName(base);
+        if (!ond::savePreset(capture(name)))
+            return;
+        mine = ond::listPresets();
+        setUser(name);
+        startRename();
+    }
+
+    void startRename()
+    {
+        if (userName.empty())
+            return;
+        browserOpen = false;
+        renaming = true;
+        fresh = true;
+        editName = userName;
+        repaint();
+    }
+
+    void finishRename(bool keep)
+    {
+        renaming = false;
+        std::string to = editName;
+        while (!to.empty() && to.back() == ' ')
+            to.pop_back();
+        if (keep && !to.empty() && to != userName && ond::renamePreset(userName, to)) {
+            mine = ond::listPresets();
+            const bool was = modified;
+            setUser(to);
+            modified = was;
+        }
+        repaint();
+    }
+
+    void loadUser(const std::string &name)
+    {
+        ond::UserPreset p;
+        if (!ond::loadPreset(name, p))
+            return;
+        int found = -1;                    // its sound, by names (indices may move between versions)
+        const auto &all = ond::sounds();
+        for (int i = 0; i < (int)all.size() && found < 0; ++i)
+            if (p.engine == ond_engine_name(all[(size_t)i].engine) &&
+                p.preset == ond_preset_name(all[(size_t)i].engine, all[(size_t)i].preset))
+                found = i;
+        selectSound(found >= 0 ? found : 0);
+        const ond::Sound &s = all[(size_t)(found >= 0 ? found : 0)];
+        for (int i = 1; i < ond::paramCount(); ++i) {
+            const int c = ond::paramControls()[(size_t)i];
+            if (c < 0)
+                continue;
+            ond_control_t info;
+            ond_control_info(c, s.engine, &info);
+            const auto v = p.values.find(info.key);
+            if (v != p.values.end())
+                setInt(i, v->second);
+        }
+        setUser(name);
+        repaint();
+    }
+
     // a sound from the screen: SOUND, then every value of the sound as the preset has it (so the host and the
     // knobs follow); the player's own (kept: sends, level, the globals) stay as they are
     void selectSound(int i)
     {
+        if (!userName.empty())
+            setUser("");                   // a factory sound now (loadUser names its own after this)
         const ond::Sound &s = ond::sounds()[(size_t)i];
         setValue(ond::P_SOUND, (float)i);
         for (int p = 1; p < ond::paramCount(); ++p) {
@@ -340,29 +534,49 @@ private:
         return ch - f.first;
     }
 
+    void button(float x, float y, float w, float h, const char *label, bool on, int hit)
+    {
+        fill(x, y, w, h, on ? ACCENT : KNOB, on ? 0.18f : 1.f, 4.f);
+        pixelText(x + w / 2.f, y + h / 2.f - 8.f, label, on ? ACCENT : DIM, 1.f, 0);
+        hits.push_back({x, y, w, h, hit});
+    }
+
     void drawHeader()
     {
         pixelText(24.f, 12.f, "OND", TEXT, 3.f);
         const ond::Sound &s = ond::sounds()[(size_t)soundIndex()];
-        const float bx = 140.f, bw = 580.f, by = 12.f, bh = 52.f;
+        const float bx = 140.f, bw = 480.f, by = 12.f, bh = 52.f;
         fill(bx, by, bw, bh, PANEL, 1.f, 4.f);
-        pixelText(bx + 20.f, by + 18.f, "<", DIM, 1.f, 0);
-        pixelText(bx + bw - 20.f, by + 18.f, ">", DIM, 1.f, 0);
-        hits.push_back({bx, by, 40.f, bh, -10});
-        hits.push_back({bx + bw - 40.f, by, 40.f, bh, -11});
-        hits.push_back({bx + 40.f, by, bw - 80.f, bh, -12});
-        char eng[48];
-        std::snprintf(eng, sizeof eng, "%s%s", soundIndex() < ond::FAVOURITES ? "\xB7 " : "", ond_engine_name(s.engine));
-        pixelText(bx + 56.f, by + 18.f, eng, DIM);
-        pixelText(bx + 200.f, by + 10.f, ond_preset_name(s.engine, s.preset), browserOpen ? ACCENT : TEXT, 2.f);
+        pixelText(bx + 18.f, by + 18.f, "<", DIM, 1.f, 0);
+        pixelText(bx + bw - 18.f, by + 18.f, ">", DIM, 1.f, 0);
+        hits.push_back({bx, by, 36.f, bh, -10});
+        hits.push_back({bx + bw - 36.f, by, 36.f, bh, -11});
+        hits.push_back({bx + 36.f, by, bw - 72.f, bh, -12});
+        char line[96];
+        if (!userName.empty())             // mine: its name, the sound under it small
+            std::snprintf(line, sizeof line, "MINE \xB7 %s %s", ond_engine_name(s.engine), ond_preset_name(s.engine, s.preset));
+        else
+            std::snprintf(line, sizeof line, "%s%s", soundIndex() < ond::FAVOURITES ? "OND \xB7 " : "", ond_engine_name(s.engine));
+        pixelText(bx + 44.f, by + 2.f, line, DIM);
+        std::string name = renaming ? editName : !userName.empty() ? userName : ond_preset_name(s.engine, s.preset);
+        if (!renaming && modified)
+            name += "*";
+        const Rgb nc = renaming ? (fresh ? DIM : TEXT) : browserOpen ? ACCENT : TEXT;
+        const float tw = pixelText(bx + 44.f, by + 19.f, name.c_str(), nc, 2.f);
+        if (renaming)                      // the cursor
+            fill(bx + 44.f + tw + 2.f, by + 19.f, 3.f, 30.f, ACCENT);
+        button(632.f, by, 64.f, bh, "SAVE", !userName.empty() && modified, -20);
+        button(704.f, by, 84.f, bh, "SAVE AS", false, -21);
         // the output: a bar that breathes with the sound
-        const float mx = 744.f, mw = 232.f, my = 34.f, m = vals[(size_t)ond::meterParam()];
+        const float mx = 804.f, mw = 172.f, my = 34.f, m = vals[(size_t)ond::meterParam()];
         const float db = m > 1e-5f ? 20.f * std::log10(m) : -100.f, k = std::fmax(0.f, std::fmin(1.f, (db + 60.f) / 60.f));
         pixelText(mx, 12.f, "OUT", DIM);
-        pixelText(mx + mw, 12.f, "0.2", FAINT, 1.f, 1);
+        pixelText(mx + mw, 12.f, "0.3", FAINT, 1.f, 1);
         fill(mx, my, mw, 6.f, KNOB, 1.f, 3.f);
         if (k > 0.f)
             fill(mx, my, mw * k, 6.f, db > -6.f ? ACCENT : TEXT, db > -6.f ? 1.f : 0.75f, 3.f);
+        if (renaming)
+            pixelText(bx + bw, by + bh + 4.f, "TYPE A NAME, ENTER", FAINT, 1.f, 1);
     }
 
     void drawSection(const Section &s)
@@ -463,40 +677,65 @@ private:
         stroke();
     }
 
-    // ---- the sound browser: the engines (the baseline eight first, as OND) and their sounds
+    // ---- the sound browser: MINE (my presets), OND (the baseline eight), then every engine's sounds
     void drawBrowser()
     {
         fill(16.f, 84.f, 968.f, 600.f, PANEL, 1.f, 6.f);
         float y = 100.f;
-        browserRow(y, "OND", browserFav, -100);
+        browserRow(y, "MINE", browserGroup == 1, -101);
+        y += 22.f;
+        browserRow(y, "OND", browserGroup == 0, -100);
+        y += 8.f;
         for (int e = 0; e < ond_engine_count(); ++e) {
             if (!ond_preset_count(e) || !std::strcmp(ond_engine_name(e), "SAMPLE"))
                 continue;
             y += 22.f;
-            browserRow(y, ond_engine_name(e), !browserFav && browserEngine == e, -200 - e);
+            browserRow(y, ond_engine_name(e), browserGroup == 2 && browserEngine == e, -200 - e);
         }
         fill(196.f, 96.f, 1.f, 576.f, EDGE);
+        if (browserGroup == 1) {
+            drawMine();
+            return;
+        }
         std::vector<int> list;
         const auto &all = ond::sounds();
         for (int i = 0; i < (int)all.size(); ++i)
-            if (browserFav ? i < ond::FAVOURITES : all[(size_t)i].engine == browserEngine && i >= ond::FAVOURITES)
+            if (browserGroup == 0 ? i < ond::FAVOURITES : all[(size_t)i].engine == browserEngine)
                 list.push_back(i);
-        if (!browserFav)                     // the engine's sounds in its own order (the eight are favourites too)
-            for (int i = 0; i < ond::FAVOURITES; ++i)
-                if (all[(size_t)i].engine == browserEngine)
-                    list.push_back(i);
         std::sort(list.begin(), list.end(), [&](int a, int b) {
-            return browserFav ? a < b : all[(size_t)a].preset < all[(size_t)b].preset;
+            return browserGroup == 0 ? a < b : all[(size_t)a].preset < all[(size_t)b].preset;
         });
         for (size_t k = 0; k < list.size(); ++k) {
             const ond::Sound &s = all[(size_t)list[k]];
             const float bx = 216.f + 256.f * (float)(k / 22), byy = 100.f + 25.f * (float)(k % 22);
-            const bool cur = list[k] == soundIndex();
+            const bool cur = userName.empty() && list[k] == soundIndex();
             if (cur)
                 fill(bx - 6.f, byy - 4.f, 244.f, 24.f, ACCENT, 0.16f, 3.f);
             pixelText(bx, byy, ond_preset_name(s.engine, s.preset), cur ? ACCENT : TEXT);
             hits.push_back({bx - 6.f, byy - 4.f, 244.f, 25.f, -1000 - list[k]});
         }
+        pixelText(984.f - 14.f, 656.f, "ESC / CLICK THE NAME TO CLOSE", FAINT, 1.f, 1);
+    }
+
+    void drawMine()
+    {
+        if (mine.empty()) {
+            pixelText(216.f, 100.f, "NO PRESETS OF YOUR OWN YET.", DIM);
+            pixelText(216.f, 125.f, "SHAPE A SOUND, THEN SAVE AS (TOP RIGHT).", DIM);
+        }
+        for (size_t k = 0; k < mine.size() && k < 66u; ++k) {   // three columns of 22
+            const float bx = 216.f + 256.f * (float)(k / 22), byy = 100.f + 25.f * (float)(k % 22);
+            const bool cur = mine[k] == userName, armed = deleteArmed == (int)k;
+            if (cur)
+                fill(bx - 6.f, byy - 4.f, 244.f, 24.f, ACCENT, 0.16f, 3.f);
+            pixelText(bx, byy, mine[k].c_str(), cur ? ACCENT : TEXT);
+            hits.push_back({bx - 6.f, byy - 4.f, 200.f, 25.f, -2000 - (int)k});
+            pixelText(bx + 230.f, byy, armed ? "DELETE?" : "x", armed ? ACCENT : FAINT, 1.f, 1);
+            hits.push_back({bx + 160.f, byy - 4.f, 78.f, 25.f, -3000 - (int)k});
+        }
+        if (mineIndex() >= 0)
+            button(216.f, 640.f, 90.f, 30.f, "RENAME", false, -30);
+        button(mineIndex() >= 0 ? 316.f : 216.f, 640.f, 130.f, 30.f, "OPEN FOLDER", false, -31);
         pixelText(984.f - 14.f, 656.f, "ESC / CLICK THE NAME TO CLOSE", FAINT, 1.f, 1);
     }
 
@@ -513,23 +752,49 @@ private:
         for (const Hit &h : hits) {
             if (x < h.x || x >= h.x + h.w || y < h.y || y >= h.y + h.h)
                 continue;
+            const int armed = deleteArmed;
+            deleteArmed = -1;
             if (h.param == -12) {
                 browserOpen = false;
             } else if (h.param == -100) {
-                browserFav = true;
+                browserGroup = 0;
+            } else if (h.param == -101) {
+                mine = ond::listPresets();
+                browserGroup = 1;
             } else if (h.param <= -200 && h.param > -1000) {
-                browserFav = false;
+                browserGroup = 2;
                 browserEngine = -200 - h.param;
-            } else if (h.param <= -1000) {
+            } else if (h.param <= -1000 && h.param > -2000) {
                 selectSound(-1000 - h.param);
                 browserOpen = false;
+            } else if (h.param <= -2000 && h.param > -3000) {
+                loadUser(mine[(size_t)(-2000 - h.param)]);
+                browserOpen = false;
+            } else if (h.param <= -3000) {
+                const int k = -3000 - h.param;
+                if (armed != k) {
+                    deleteArmed = k;               // once: asks
+                } else {
+                    if (mine[(size_t)k] == userName)
+                        setUser("");               // (what sounds stays; it is just not a preset any more)
+                    ond::deletePreset(mine[(size_t)k]);
+                    mine = ond::listPresets();
+                }
+            } else if (h.param == -30) {
+                startRename();
+            } else if (h.param == -31) {
+                ond::openPresetFolder();
             } else if (h.param == -10 || h.param == -11) {
-                const int n = (int)ond::sounds().size();
-                selectSound((soundIndex() + (h.param == -11 ? 1 : n - 1)) % n);
+                step(h.param == -11 ? 1 : -1);
+            } else if (h.param == -20) {
+                saveCurrent();
+            } else if (h.param == -21) {
+                saveAs();
             }
             repaint();
             return true;
         }
+        deleteArmed = -1;
         return true;
     }
 
@@ -539,8 +804,13 @@ private:
     float dragY = 0.f, dragStart = 0.f;
     bool moved = false;
     uint lastClick = 0;
-    bool browserOpen = false, browserFav = true;
+    bool browserOpen = false;
+    int browserGroup = 0;                  // 0 OND (the eight), 1 MINE, 2 an engine (browserEngine)
     int browserEngine = 7;
+    std::vector<std::string> mine;         // my presets' names
+    std::string userName, editName;        // the preset loaded ("" a factory sound); the name being typed
+    bool modified = false, renaming = false, fresh = false;
+    int deleteArmed = -1;                  // a preset's delete asked once: the second click deletes
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OndUI)
 };
