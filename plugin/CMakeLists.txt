@@ -10,8 +10,9 @@ set(OND_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 add_subdirectory(${OND_ROOT}/third_party/DPF ${CMAKE_BINARY_DIR}/dpf)
 
 dpf_add_plugin(Ond
-  TARGETS vst3 clap
+  TARGETS vst3 clap jack
   UI_TYPE opengl
+  FORCE_NATIVE_AUDIO_FALLBACK                     # (the standalone Ond.exe: Windows' own audio and MIDI, no JACK)
   FILES_COMMON
       OndPresets.cpp
   FILES_DSP
@@ -48,4 +49,6 @@ if(WIN32)
   # the presets' folder (OndPresets.cpp: Documents, Explorer)
   target_link_libraries(Ond-vst3 PRIVATE shell32 ole32 uuid)
   target_link_libraries(Ond-clap PRIVATE shell32 ole32 uuid)
+  target_link_options(Ond-jack PRIVATE -static)
+  target_link_libraries(Ond-jack PRIVATE shell32 ole32 uuid)
 endif()

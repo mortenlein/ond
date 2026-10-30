@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Morten Lein
 # Ond as a Windows plugin (VST3, CLAP), cross-built with llvm-mingw. From the repo root:
-#   sh tools/build_plugin.sh            -> build/plugin/bin/Ond.vst3, Ond.clap
+#   sh tools/build_plugin.sh            -> build/plugin/bin/Ond.vst3, Ond.clap, Ond.exe (standalone)
 # Windows (Git Bash): runs itself in WSL. Once, in WSL: llvm-mingw in ~/.llvm-mingw/current (or LLVM_MINGW),
 # cmake, python3; git submodule update --init (third_party/DPF).
 set -e
@@ -23,5 +23,5 @@ cmake -S plugin -B "$B" -DCMAKE_TOOLCHAIN_FILE="$PWD/plugin/mingw-toolchain.cmak
 cmake --build "$B" -j"$(nproc)"
 rm -rf build/plugin/bin
 mkdir -p build/plugin/bin
-cp -r "$B/bin/Ond.vst3" "$B/bin/Ond.clap" build/plugin/bin/
+cp -r "$B/bin/Ond.vst3" "$B/bin/Ond.clap" "$B/bin/Ond.exe" build/plugin/bin/
 echo "build/plugin/bin: $(ls build/plugin/bin | tr '\n' ' ')"

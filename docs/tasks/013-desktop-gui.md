@@ -50,3 +50,9 @@ text from the firmware's tables and `param_format`). New sound stages (bellows, 
   presets while one is loaded. The Live set keeps which preset was loaded (plugin state `preset`).
 - Checked with `clap_gui_shot` (save as, type a name, change, save, browse, delete asked, load in a fresh
   instance) in a test folder. Sound unchanged (baseline renders, within 1 LSB).
+
+## Step 3 (2026-10-31): the standalone `build/plugin/bin/Ond.exe`
+
+DPF's native fallback (RtAudio over WASAPI, RtMidi over Windows MIDI), one static exe, Windows' own DLLs only.
+Built, not yet started here (it opens audio on Morten's machine): Morten tries it — its settings (audio device,
+MIDI in) are in DPF's standalone menu.
