@@ -11,7 +11,7 @@ if [ "$(uname -s)" != Linux ] && command -v wsl.exe >/dev/null 2>&1; then
     exec env MSYS_NO_PATHCONV=1 wsl.exe -- sh tools/build_plugin.sh "$@"
 fi
 PY="${PYTHON:-python3}"
-[ -f third_party/DPF/CMakeLists.txt ] || git submodule update --init third_party/DPF
+[ -f third_party/DPF/dgl/src/pugl-upstream/include/pugl/pugl.h ] || git submodule update --init --recursive third_party/DPF
 mkdir -p build/gen
 for g in tables:felucca_tables drumkits:felucca_drumkits fm6_patches:felucca_fm6 samples:felucca_samples; do
     [ "build/gen/${g#*:}.h" -nt "tools/gen_${g%%:*}.py" ] || "$PY" "tools/gen_${g%%:*}.py" "build/gen/${g#*:}.h" >/dev/null

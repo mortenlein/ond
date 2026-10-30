@@ -5,7 +5,20 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "ond_engine.h"
+
+static int control(const char *key)
+{
+    ond_control_t c;
+    int i;
+    for (i = 0; i < ond_control_count(); i++) {
+        ond_control_info(i, 0, &c);
+        if (!strcmp(c.key, key))
+            return i;
+    }
+    return -1;
+}
 
 int main(int argc, char **argv)
 {
@@ -22,7 +35,7 @@ int main(int argc, char **argv)
     ond_init();
     ond_load_preset(e, p);
     if (argc > 4)
-        ond_set_global(OND_G_DUST, atoi(argv[4]));
+        ond_control_set(control("dust"), atoi(argv[4]));
     fwrite("RIFF", 1, 4, w); v32 = 36 + data; fwrite(&v32, 4, 1, w); fwrite("WAVEfmt ", 1, 8, w);
     v32 = 16; fwrite(&v32, 4, 1, w); v16 = 1; fwrite(&v16, 2, 1, w); v16 = 2; fwrite(&v16, 2, 1, w);
     v32 = OND_FS; fwrite(&v32, 4, 1, w); v32 = OND_FS * 4; fwrite(&v32, 4, 1, w);

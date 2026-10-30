@@ -4,61 +4,31 @@
 // MIDI, at 44.1 kHz, resampled to the host's rate. The firmware keeps its state in globals: one instance plays,
 // a second one in the same process stays silent (gOwner) rather than corrupting the first.
 #include "DistrhoPlugin.hpp"
+#include "OndShared.hpp"
 #include "Resampler.hpp"
 #include <atomic>
-#include <vector>
-
-extern "C" {
-#include "ond_engine.h"
-}
+#include <cmath>
+#include <memory>
 
 START_NAMESPACE_DISTRHO
 
 namespace {
-
-enum { pSound, pDust, pReverb, pRevType, pRevSize, pDelay, pLevel, pCount };
-
-struct Sound {
-    int engine, preset;
-};
-
-// the SOUND menu (at most 255 entries, DPF's enumeration): the baseline eight (refs/baseline), then every preset of
-// the engines closest to Ond. The others come with a screen of our own.
-std::vector<Sound> soundList()
-{
-    static const Sound FIRST[] = {{7, 6}, {7, 13}, {7, 10}, {7, 12}, {12, 18}, {8, 6}, {22, 13}, {18, 5}};
-    static const char *const ENGINES[] = {"WHEEL", "STRINGS", "JUNO", "HYBRID", "GRAIN", "VECTOR",
-                                          "TERRAIN", "WAVE", "MACRO", "TRIO", "ANALOG"};
-    std::vector<Sound> v(FIRST, FIRST + sizeof FIRST / sizeof FIRST[0]);
-    for (const char *name : ENGINES)
-        for (int e = 0; e < ond_engine_count(); ++e) {
-            if (std::strcmp(ond_engine_name(e), name) != 0)
-                continue;
-            for (int p = 0; p < ond_preset_count(e); ++p) {
-                bool dup = false;
-                for (const Sound &f : FIRST)
-                    dup |= f.engine == e && f.preset == p;
-                if (!dup && v.size() < 255)
-                    v.push_back({e, p});
-            }
-        }
-    return v;
-}
-
 std::atomic<void *> gOwner{nullptr};
-
-} // namespace
+}
 
 class OndPlugin : public Plugin {
 public:
     OndPlugin()
-        : Plugin(pCount, 0, 0), sounds(soundList())
+        : Plugin((uint32_t)ond::paramCount(), 0, 0),
+          values(new std::atomic<float>[(size_t)ond::paramCount()]),
+          dirty(new std::atomic<bool>[(size_t)ond::paramCount()]),
+          touched(new std::atomic<bool>[(size_t)ond::paramCount()])
     {
-        for (int i = 0; i < pCount; ++i) {
+        for (int i = 0; i < ond::paramCount(); ++i) {
             Parameter p;
             initParameter((uint32_t)i, p);
             values[i] = p.ranges.def;
-            dirty[i] = true;
+            dirty[i] = touched[i] = false;
         }
     }
 
@@ -73,77 +43,70 @@ protected:
     const char *getMaker() const override { return "Morten Lein"; }
     const char *getHomePage() const override { return "https://github.com/mortenlein/ond"; }
     const char *getLicense() const override { return "GPL-3.0-only"; }
-    uint32_t getVersion() const override { return d_version(0, 1, 0); }
+    uint32_t getVersion() const override { return d_version(0, 2, 0); }
 
     void initParameter(uint32_t index, Parameter &p) override
     {
-        int mn = 0, mx = 127, df = 0;
-        p.hints = kParameterIsAutomatable | kParameterIsInteger;
-        switch (index) {
-        case pSound: {
+        const int c = ond::paramControls()[index];
+        if (c == -1) {
+            p.hints = kParameterIsAutomatable | kParameterIsInteger;
             p.name = "Sound";
             p.symbol = "sound";
             p.ranges.min = 0.f;
-            p.ranges.max = (float)(sounds.size() - 1);
+            p.ranges.max = (float)(ond::sounds().size() - 1);
             p.ranges.def = 0.f;
-            ParameterEnumerationValue *ev = new ParameterEnumerationValue[sounds.size()];
-            for (size_t i = 0; i < sounds.size(); ++i) {
-                ev[i].value = (float)i;
-                ev[i].label = String(ond_engine_name(sounds[i].engine)) + ": " +
-                              ond_preset_name(sounds[i].engine, sounds[i].preset);
-            }
-            p.enumValues.count = (uint8_t)sounds.size();
-            p.enumValues.restrictedMode = true;
-            p.enumValues.values = ev;
             return;
         }
-        case pDust:
-            p.name = "Dust", p.symbol = "dust";
-            ond_global_range(OND_G_DUST, &mn, &mx, &df);
-            break;
-        case pReverb:                           // the FM-1 loads a factory sound dry: 0 until turned up
-            p.name = "Reverb", p.symbol = "reverb";
-            ond_param_range(OND_P_REV, &mn, &mx, &df);
-            df = 0;
-            break;
-        case pRevType: {
-            static const char *const T[] = {"ROOM", "PLATE", "HALL", "SHIMMER"};
-            p.name = "Reverb Type", p.symbol = "revtype";
-            ond_global_range(OND_G_RTYPE, &mn, &mx, &df);
-            ParameterEnumerationValue *ev = new ParameterEnumerationValue[4];
-            for (int i = 0; i < 4; ++i)
-                ev[i].value = (float)i, ev[i].label = T[i];
-            p.enumValues.count = 4;
+        if (c == -2) {
+            p.hints = kParameterIsOutput;
+            p.name = "Meter";
+            p.symbol = "meter";
+            p.ranges.min = 0.f, p.ranges.max = 1.f, p.ranges.def = 0.f;
+            return;
+        }
+        ond_control_t info;
+        ond_control_info(c, ond::sounds()[0].engine, &info);
+        p.symbol = info.key;
+        p.name = info.scope == OND_SCOPE_EDIT ? String("Edit ") + String(info.key + 4) : String(nameOf(info.key));
+        if (info.scope == OND_SCOPE_EDIT) {            // 0..1 over the engine's range (OndShared.hpp)
+            p.hints = kParameterIsAutomatable;
+            p.ranges.min = 0.f, p.ranges.max = 1.f;
+            p.ranges.def = ond::editNorm(ond_preset_value(c, ond::sounds()[0].engine, ond::sounds()[0].preset), info);
+            return;
+        }
+        p.hints = kParameterIsAutomatable | kParameterIsInteger;
+        p.ranges.min = (float)info.min;
+        p.ranges.max = (float)info.max;
+        // a fresh instance is the first sound as the FM-1 loads it; the player's own (kept) at their defaults,
+        // reverb and delay dry
+        p.ranges.def = (float)(info.kept ? (std::strcmp(info.key, "reverb") && std::strcmp(info.key, "delay") ? info.def : 0)
+                                         : ond_preset_value(c, ond::sounds()[0].engine, ond::sounds()[0].preset));
+        if (info.is_enum) {
+            const int n = info.max - info.min + 1;
+            ParameterEnumerationValue *ev = new ParameterEnumerationValue[n];
+            for (int i = 0; i < n; ++i) {
+                char buf[32];
+                ond_control_text(c, ond::sounds()[0].engine, info.min + i, buf, sizeof buf);
+                ev[i].value = (float)(info.min + i);
+                ev[i].label = buf;
+            }
+            p.enumValues.count = (uint8_t)n;
             p.enumValues.restrictedMode = true;
             p.enumValues.values = ev;
-            break;
         }
-        case pRevSize:
-            p.name = "Reverb Size", p.symbol = "revsize";
-            ond_global_range(OND_G_RSIZE, &mn, &mx, &df);
-            break;
-        case pDelay:
-            p.name = "Delay", p.symbol = "delay";
-            ond_param_range(OND_P_DLY, &mn, &mx, &df);
-            df = 0;
-            break;
-        case pLevel:
-            p.name = "Level", p.symbol = "level";
-            ond_param_range(OND_P_LEVEL, &mn, &mx, &df);
-            break;
-        }
-        p.ranges.min = (float)mn;
-        p.ranges.max = (float)mx;
-        p.ranges.def = (float)df;
     }
 
-    float getParameterValue(uint32_t index) const override { return index < pCount ? values[index].load() : 0.f; }
+    float getParameterValue(uint32_t index) const override
+    {
+        return index < (uint32_t)ond::paramCount() ? values[index].load() : 0.f;
+    }
 
     void setParameterValue(uint32_t index, float value) override
     {
-        if (index >= pCount)
+        if (index >= (uint32_t)ond::paramCount() || (int)index == ond::meterParam())
             return;
         values[index] = value;
+        touched[index] = true;                  // set by the host or the screen: not the sound's own any more
         dirty[index] = true;                    // applied on the audio thread, at the next run
     }
 
@@ -153,11 +116,13 @@ protected:
         owner = gOwner.compare_exchange_strong(none, this) || none == this;
         if (!owner)
             return;
-        ond_init();
-        for (int i = 0; i < pCount; ++i)
-            dirty[i] = true;
+        ond_init();                             // the sound, then only what was set over it (a restored set, the
+        dirty[ond::P_SOUND] = true;             // player's own): an untouched knob keeps the sound's value
+        for (int i = 1; i < ond::paramCount(); ++i)
+            dirty[i] = touched[i].load();
         resampler.setup(OND_FS, getSampleRate());
         blockPos = OND_BLOCK;
+        meter = 0.f;
     }
 
     void deactivate() override
@@ -177,6 +142,9 @@ protected:
             std::memset(outR, 0, sizeof(float) * frames);
             return;
         }
+        const TimePosition &tp = getTimePosition();
+        if (tp.bbt.valid)
+            ond_set_tempo(tp.bbt.beatsPerMinute);
         applyParameters();
         uint32_t done = 0, e = 0;
         while (done < frames) {
@@ -197,9 +165,35 @@ protected:
                 resampler.read(outL[done], outR[done]);
             }
         }
+        float peak = 0.f;                       // the screen's meter: the peak, falling ~20 dB a second
+        for (uint32_t i = 0; i < frames; ++i)
+            peak = std::fmax(peak, std::fmax(std::fabs(outL[i]), std::fabs(outR[i])));
+        meter = std::fmax(peak, meter * std::pow(0.1f, (float)frames / (float)getSampleRate()));
+        values[ond::meterParam()] = meter;
     }
 
 private:
+    static const char *nameOf(const char *key)
+    {
+        static const char *const N[][2] = {
+            {"brite", "Brite"}, {"timbr", "Timbre"}, {"motn", "Motion"}, {"space", "Space"},
+            {"attack", "Attack"}, {"decay", "Decay"}, {"sustain", "Sustain"}, {"release", "Release"},
+            {"vintage", "Vintage"}, {"spread", "Spread"}, {"glide", "Glide"}, {"detune", "Detune"},
+            {"voice", "Voice"}, {"lfo_rate", "LFO Rate"}, {"lfo_wave", "LFO Wave"}, {"lfo_pitch", "LFO > Pitch"},
+            {"lfo_filter", "LFO > Filter"}, {"arp_mode", "Arp Mode"}, {"arp_rate", "Arp Rate"},
+            {"arp_oct", "Arp Octaves"}, {"arp_gate", "Arp Gate"}, {"arp_hold", "Hold"}, {"arp_prob", "Arp Probability"},
+            {"spice", "Spice"},
+            {"dust", "Dust"}, {"filter", "Filter"}, {"chorus", "Chorus"}, {"chorus_rate", "Chorus Rate"},
+            {"chorus_depth", "Chorus Depth"}, {"delay", "Delay"}, {"delay_time", "Delay Time"},
+            {"delay_feedback", "Delay Feedback"}, {"delay_mode", "Delay Mode"}, {"reverb", "Reverb"},
+            {"reverb_type", "Reverb Type"}, {"reverb_size", "Reverb Size"}, {"reverb_damp", "Reverb Damping"},
+            {"level", "Level"}};
+        for (const auto &n : N)
+            if (!std::strcmp(n[0], key))
+                return n[1];
+        return key;
+    }
+
     void engineSample(float &l, float &r)
     {
         if (blockPos >= OND_BLOCK) {
@@ -210,27 +204,40 @@ private:
         r = blockR[blockPos++];
     }
 
+    // the parameters changed since the last run, on the audio thread. SOUND first: a preset loads whole (the
+    // screen sends its values after it); then whatever the host or the screen set, and the player's own
+    // (kept: sends, level) again over what the preset reset
     void applyParameters()
     {
-        const int v[pCount] = {(int)values[pSound], (int)values[pDust], (int)values[pReverb], (int)values[pRevType],
-                               (int)values[pRevSize], (int)values[pDelay], (int)values[pLevel]};
-        if (dirty[pSound].exchange(false)) {
-            const Sound &s = sounds[(size_t)v[pSound] < sounds.size() ? (size_t)v[pSound] : 0];
-            ond_load_preset(s.engine, s.preset);
-            dirty[pReverb] = dirty[pDelay] = dirty[pLevel] = true;   // the preset set them: ours again
+        const int n = ond::paramCount();
+        if (dirty[ond::P_SOUND].exchange(false)) {
+            const auto &list = ond::sounds();
+            const size_t i = (size_t)(int)values[ond::P_SOUND];
+            current = list[i < list.size() ? i : 0];
+            ond_load_preset(current.engine, current.preset);
+            for (int p = 1; p < n; ++p) {
+                ond_control_t info;
+                const int c = ond::paramControls()[p];
+                if (c < 0)
+                    continue;
+                ond_control_info(c, current.engine, &info);
+                if (info.scope == OND_SCOPE_GLOBAL)
+                    continue;
+                if (info.kept)
+                    dirty[p] = touched[p].load();   // the player's send / level over the preset's reset
+                else if (!dirty[p])
+                    touched[p] = false;             // the new sound's own value from now on
+            }
         }
-        if (dirty[pDust].exchange(false))
-            ond_set_global(OND_G_DUST, v[pDust]);
-        if (dirty[pRevType].exchange(false))
-            ond_set_global(OND_G_RTYPE, v[pRevType]);
-        if (dirty[pRevSize].exchange(false))
-            ond_set_global(OND_G_RSIZE, v[pRevSize]);
-        if (dirty[pReverb].exchange(false))
-            ond_set_param(OND_P_REV, v[pReverb]);
-        if (dirty[pDelay].exchange(false))
-            ond_set_param(OND_P_DLY, v[pDelay]);
-        if (dirty[pLevel].exchange(false))
-            ond_set_param(OND_P_LEVEL, v[pLevel]);
+        for (int p = 1; p < n; ++p) {
+            const int c = ond::paramControls()[p];
+            if (c < 0 || !dirty[p].exchange(false))
+                continue;
+            ond_control_t info;
+            ond_control_info(c, current.engine, &info);
+            const float v = values[p];
+            ond_control_set(c, info.scope == OND_SCOPE_EDIT ? ond::editValue(v, info) : (int)std::lround(v));
+        }
     }
 
     void release()
@@ -241,12 +248,14 @@ private:
         owner = false;
     }
 
-    const std::vector<Sound> sounds;
-    std::atomic<float> values[pCount];
-    std::atomic<bool> dirty[pCount];
+    std::unique_ptr<std::atomic<float>[]> values;
+    std::unique_ptr<std::atomic<bool>[]> dirty;
+    std::unique_ptr<std::atomic<bool>[]> touched;
+    ond::Sound current{7, 6};
     Resampler resampler;
     float blockL[OND_BLOCK], blockR[OND_BLOCK];
     uint32_t blockPos = OND_BLOCK;
+    float meter = 0.f;
     bool owner = false;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OndPlugin)
