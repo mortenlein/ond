@@ -1406,24 +1406,29 @@ static void mix_part(track_t *t, uint32_t n)
  * one-pole low-pass (open -> ~3 kHz), a little hiss and crackle. The hiss and the crackle are the
  * record turning: they fade in with PLAY and out (~0.1 s) at STOP, so a stopped SLOOP is silent.
  * Stereo, ~25 ops a sample. */
-static struct {
+typedef struct {
     int32_t hl, hr, hn;                                 /* held samples, samples left to hold */
     int32_t ll, lr;                                     /* low-pass states */
     int32_t rnd, click;                                 /* noise state, a crackle decaying */
     int32_t bed;                                        /* hiss / crackle level, Q15: 0 stopped, 32767 playing */
-} dust = {0, 0, 0, 0, 0, 0x2545F491, 0, 0};
+} dust_t;
+static dust_t dust = {0, 0, 0, 0, 0, 0x2545F491, 0, 0};
+#if CLIPPER_SYNTH && OND_BEAT
+static dust_t beat_dust = {0, 0, 0, 0, 0, 0x6C8E9CF5, 0, 0};   /* (Ond: BEAT's own DUST, on the drums only) */
+#endif
 
 static int32_t crush_bits(int32_t v, int32_t shift)    /* fewer bits, rounded toward 0: no DC from tails */
 {
     return v >= 0 ? (v >> shift) << shift : -((-v >> shift) << shift);
 }
 
-static void dust_process(int32_t *l, int32_t *r, uint32_t n)
+/* (Ond) the state and the depth given: the master's (dust_process, as it was), and BEAT's own on the drums */
+static void dust_run(dust_t *ds, int32_t d, int32_t *l, int32_t *r, uint32_t n)
 {
-    int32_t d = song.g[G_DUST], hold, shift, a, drive, hiss, i, bed0, bed1;
+    int32_t hold, shift, a, drive, hiss, i, bed0, bed1;
     uint32_t pc;
     if (!d) {
-        dust.bed = 0;
+        ds->bed = 0;
         return;
     }
     hold = 1 + d * 3 / 127;
@@ -1432,32 +1437,34 @@ static void dust_process(int32_t *l, int32_t *r, uint32_t n)
     drive = 4096 + d * 24;                              /* Q12: 1x .. 1.75x */
     hiss = d * 2;
     pc = (uint32_t)d * 7u;                              /* crackle: chance per sample, x 2^-22 */
-    bed0 = dust.bed;                                    /* ~0.1 s from 0 to full (238 a block of 32) */
-    bed1 = dust.bed = clamp(dust.bed + (song.playing ? 238 : -238), 0, 32767);
+    bed0 = ds->bed;                                    /* ~0.1 s from 0 to full (238 a block of 32) */
+    bed1 = ds->bed = clamp(ds->bed + (song.playing ? 238 : -238), 0, 32767);
     for (i = 0; i < (int32_t)n; i++) {
         int32_t x = l[i], y = r[i];
         int32_t bed = bed0 + (((bed1 - bed0) * i) >> CTL_LOG2);
-        uint32_t nz = noise32(&dust.rnd);
-        if (--dust.hn <= 0) {                           /* sample and hold, then the bits */
-            dust.hn = hold;
-            dust.hl = softclip(((x >> 2) * drive) >> 10);
-            dust.hr = softclip(((y >> 2) * drive) >> 10);
+        uint32_t nz = noise32(&ds->rnd);
+        if (--ds->hn <= 0) {                           /* sample and hold, then the bits */
+            ds->hn = hold;
+            ds->hl = softclip(((x >> 2) * drive) >> 10);
+            ds->hr = softclip(((y >> 2) * drive) >> 10);
             if (shift) {
-                dust.hl = crush_bits(dust.hl, shift);
-                dust.hr = crush_bits(dust.hr, shift);
+                ds->hl = crush_bits(ds->hl, shift);
+                ds->hr = crush_bits(ds->hr, shift);
             }
         }
-        dust.ll += mulq15(dust.hl - dust.ll, a);
-        dust.lr += mulq15(dust.hr - dust.lr, a);
+        ds->ll += mulq15(ds->hl - ds->ll, a);
+        ds->lr += mulq15(ds->hr - ds->lr, a);
         if ((nz >> 10) < pc)                            /* a speck of dust */
-            dust.click = mulq15(((int32_t)(nz & 0x3FFu) - 512) * d / 8, bed);
-        x = dust.ll + dust.click + mulq15(((int32_t)(nz >> 16) - 32768) * hiss >> 15, bed);
-        y = dust.lr + dust.click + mulq15(((int32_t)(nz & 0xFFFFu) - 32768) * hiss >> 15, bed);
-        dust.click -= dust.click >> 2;
+            ds->click = mulq15(((int32_t)(nz & 0x3FFu) - 512) * d / 8, bed);
+        x = ds->ll + ds->click + mulq15(((int32_t)(nz >> 16) - 32768) * hiss >> 15, bed);
+        y = ds->lr + ds->click + mulq15(((int32_t)(nz & 0xFFFFu) - 32768) * hiss >> 15, bed);
+        ds->click -= ds->click >> 2;
         l[i] = x;
         r[i] = y;
     }
 }
+
+static void dust_process(int32_t *l, int32_t *r, uint32_t n) { dust_run(&dust, song.g[G_DUST], l, r, n); }
 
 static void djf_process(int32_t *l, int32_t *r, uint32_t n)
 {
@@ -1491,14 +1498,26 @@ static void mix_block(int32_t *out, uint32_t n)
         static int32_t dl[CTL], dr[CTL], dv[CTL], dd[CTL];
         tsvf_t fc;
         djf_t *f = &tflt[TRK_DRUM];
-        if (n <= CTL && djf_block(f, TDRUM->p[P_TFLT], &fc)) {   /* the drum track's FILTER: left, right, the sends */
+        const int flt = n <= CTL && djf_block(f, TDRUM->p[P_TFLT], &fc);
+#if CLIPPER_SYNTH && OND_BEAT
+        const int bdust = n <= CTL && ond_beat_dust;        /* (Ond: BEAT's own DUST, the drums alone) */
+#else
+        const int bdust = 0;
+#endif
+        if (flt || bdust) {                                 /* the drum track's FILTER: left, right, the sends */
             for (i = 0; i < n; i++)
                 dl[i] = dr[i] = dv[i] = dd[i] = 0;
             slicer_drums(dl, dr, dv, dd, n);
-            tflt_run(f, &fc, dl, n, 0);
-            tflt_run(f, &fc, dr, n, 1);
-            tflt_run(f, &fc, dv, n, 2);
-            tflt_run(f, &fc, dd, n, 3);
+            if (flt) {
+                tflt_run(f, &fc, dl, n, 0);
+                tflt_run(f, &fc, dr, n, 1);
+                tflt_run(f, &fc, dv, n, 2);
+                tflt_run(f, &fc, dd, n, 3);
+            }
+#if CLIPPER_SYNTH && OND_BEAT
+            if (bdust)
+                dust_run(&beat_dust, ond_beat_dust, dl, dr, n);
+#endif
             for (i = 0; i < n; i++) {
                 mix_l[i] += dl[i];
                 mix_r[i] += dr[i];

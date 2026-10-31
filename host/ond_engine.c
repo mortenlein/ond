@@ -371,6 +371,9 @@ static const param_desc_t PUMP_D = {"PUMP", F_PCT, 0, 127, 0, 0, 0};
 /* TONE: the drum track's own filter (SLOOP 2.4's P_TFLT, fx.c djf: < 0 a low-pass closing, > 0 a high-pass): muffled,
  * far-away drums one way, thin the other; OFF at 0 */
 static const param_desc_t TONE_D = {"TONE", F_FILT, -64, 63, 0, 0, 0};
+/* DUST: Clipper's DUST (fx.c dust_run) a second time, on the drums alone (Morten's OK, 2026-10-31): dusty drums
+ * under a clean organ; the master DUST still over everything */
+static const param_desc_t BDUST_D = {"DUST", F_PCT, 0, 127, 0, 0, 0};
 static const param_desc_t FILL_D = {"FILL", F_ENUM, 0, 2, 2, N_FILL, 0};
 /* the parts of the kit, each in or out of the groove (Morten: "toggle things out of the loop"): drums.c's lanes */
 static const char *const N_INOUT[] = {"OUT", "IN"};
@@ -392,7 +395,7 @@ static const param_desc_t KIT_D = {"KIT", F_ENUM, DRUM_SAMPLED, DRUM_SAMPLED + D
 static const param_desc_t BLVL_D = {"LEVEL", F_PCT, 0, 127, 100, 0, 0};
 static const param_desc_t CATCH_D = {"CATCH", F_INT, 0, 1000, 0, 0, "ms"};
 static const param_desc_t LAND_D = {"LAND", F_ENUM, 0, 3, 0, N_LAND, 0};
-static int16_t host_val[17];                   /* CATCH, LAND, FEEL, (beat LEVEL: drums.c's own), -, GROOVE, DRUNK,
+static int16_t host_val[19];                   /* CATCH, LAND, FEEL, (beat LEVEL: drums.c's own), -, GROOVE, DRUNK,
                                                 * BARS, FILL, the 7 parts in / out */
 static void beat_load(void) { beat_pattern(host_val[2], host_val[5], host_val[6], host_val[7], host_val[8]); }
 static void beat_refresh(void);
@@ -407,6 +410,7 @@ static void beat_init(void)
     host_val[7] = BARS_D.def;
     host_val[8] = FILL_D.def;
     host_val[9] = ond_beat_pump = 0;
+    host_val[18] = ond_beat_dust = 0;
     {
         int k;
         for (k = 0; k < 7; k++)
@@ -486,6 +490,7 @@ static const ctl_t CTL_TAB[] = {
     {"beat_perc", "BEAT", OND_SCOPE_HOST, 16, 1, &PART_D[6]},
     {"beat_pump", "BEAT", OND_SCOPE_HOST, 9, 1, &PUMP_D},                /* (Ond 0.14) */
     {"beat_tone", "BEAT", OND_SCOPE_HOST, 17, 1, &TONE_D},               /* (Ond 0.15) */
+    {"beat_dust", "BEAT", OND_SCOPE_HOST, 18, 1, &BDUST_D},              /* (Ond 0.17) */
 };
 
 static const param_desc_t *ctl_desc(int c, int engine)
@@ -554,6 +559,8 @@ void ond_control_set(int c, int v)
             ond_beat_lvl = (int16_t)v;
         if (k->id == 9)
             ond_beat_pump = (int16_t)v;
+        if (k->id == 18)
+            ond_beat_dust = (int16_t)v;
     } else
         trk[0].p[k->scope == OND_SCOPE_EDIT ? P_E0 + k->id : k->id] = (int16_t)v;
 }

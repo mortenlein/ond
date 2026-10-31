@@ -134,3 +134,9 @@ a change to Clipper's DUST — Morten first.
 `ond_beat_bar` (pure: the tables and the screen's values) gives each bar as BEAT plays it; the screen writes 8 bars
 as a type-0 MIDI file (480 a quarter, notes 16–31, a 32nd long) to `Documents/Ond/Beats`. Checked against BEAT's
 own MIDI out playing the same groove: the same 105 notes and velocities in 4 bars, within 1.4 ms.
+
+## Step 6c (2026-10-31, Ond 0.17): the beat's own DUST (Morten's OK)
+
+fx.c: DUST's body as `dust_run(state, depth, ...)`; `dust_process` calls it with the master's state and G_DUST (the
+FM-1 package byte-identical, hostsim's DUST 0/40/90 baseline byte-identical). Under OND_BEAT the drums are mixed
+through `dust_run(&beat_dust, BEAT's DUST)` before the mix. 0 by default.

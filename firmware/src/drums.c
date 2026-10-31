@@ -13,6 +13,7 @@
 #if CLIPPER_SYNTH && OND_BEAT
 static int16_t ond_beat_lvl = 100, ond_beat_rev, ond_beat_dly;
 static int16_t ond_beat_pump;                       /* the kick ducking the instrument: fx.c duck_block's depth */
+static int16_t ond_beat_dust;                       /* BEAT's own DUST (fx.c dust_run on the drums only), 0..127 */
 #define DR_LVL ond_beat_lvl
 #define DR_REV ond_beat_rev
 #define DR_DLY ond_beat_dly

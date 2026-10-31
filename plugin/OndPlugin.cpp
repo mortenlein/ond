@@ -52,7 +52,7 @@ protected:
     const char *getMaker() const override { return "Morten Lein"; }
     const char *getHomePage() const override { return "https://github.com/mortenlein/ond"; }
     const char *getLicense() const override { return "GPL-3.0-only"; }
-    uint32_t getVersion() const override { return d_version(0, 16, 0); }
+    uint32_t getVersion() const override { return d_version(0, 17, 0); }
 
     // "preset": the player's preset loaded on the screen (its name; "" a factory sound), kept with the Live set
     // so the screen shows it again. The sound itself is in the parameters.
@@ -323,7 +323,8 @@ private:
             {"beat_drunk", "Beat Drunk"}, {"beat_bars", "Beat Bars"}, {"beat_fill", "Beat Fill"},
             {"beat_kick", "Beat Kick"}, {"beat_snare", "Beat Snare"}, {"beat_rim", "Beat Rim"},
             {"beat_hats", "Beat Hats"}, {"beat_cymbals", "Beat Cymbals"}, {"beat_toms", "Beat Toms"},
-            {"beat_perc", "Beat Perc"}, {"beat_pump", "Beat Pump"}, {"beat_tone", "Beat Tone"}};
+            {"beat_perc", "Beat Perc"}, {"beat_pump", "Beat Pump"}, {"beat_tone", "Beat Tone"},
+            {"beat_dust", "Beat Dust"}};
         for (const auto &n : N)
             if (!std::strcmp(n[0], key))
                 return n[1];

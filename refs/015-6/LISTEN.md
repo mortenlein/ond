@@ -26,3 +26,14 @@ Measured on the drums alone: TONE −50 leaves 40 Hz–4 kHz as it was (±0.2 dB
 
 (The beat's own DUST — a second DUST on the drums only — needs Clipper's DUST to run twice; held until Morten
 wants it beyond TONE + the master DUST.)
+
+## 6c — the beat's own DUST (Ond 0.17; Morten's OK)
+
+Clipper's DUST a second time, on the drums alone (fx.c `dust_run`, its own state): dusty drums under a clean organ,
+the master DUST still over everything. 0 by default.
+
+- `after_chapel_hiphop_beatdust60.wav`, `after_chapel_hiphop_beatdust110.wav` (vs `before_chapel_hiphop_pump0.wav`).
+
+Measured on the drums alone: at 90 DUST changes the drums by −31.5 dB against their −14.7 dB (grit: fewer bits, a
+lower rate, a soft clip), their spectrum within ±2 dB (the low-pass and the aliasing it makes balance out). For
+muffled drums: TONE. The master DUST is the same as ever (the baseline at DUST 0 / 40 / 90, byte for byte).
