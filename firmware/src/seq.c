@@ -3611,6 +3611,9 @@ static void events_block(uint32_t n)
     }
     for (i = 0; i < (CLIPPER_SYNTH ? 1u : NTRK); i++)  /* (Clipper: the instrument's sequencer only) */
         seq_tick(&trk[i], adv);
+#if CLIPPER_SYNTH && OND_BEAT
+    seq_tick(TDRUM, adv);                               /* (Ond: BEAT, the drum track's steps: host/ond_engine.c) */
+#endif
     click_tick();
     roll_block(adv);
     for (i = 0; i < (CLIPPER_SYNTH ? 1u : NPART); i++)

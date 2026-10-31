@@ -1479,7 +1479,7 @@ static void mix_block(int32_t *out, uint32_t n)
     duck_block(n * (uint32_t)song.g[G_BPM]);
     for (i = 0; i < NPART; i++)
         mix_part(&trk[i], n);
-#if !CLIPPER_SYNTH || BOARD_SMK37                                  /* (Clipper 1.2: no drum machine: nothing to render; its sounds are
+#if !CLIPPER_SYNTH || BOARD_SMK37 || OND_BEAT                      /* (Clipper 1.2: no drum machine: nothing to render; its sounds are
                                                      * out of the image) */
     drums.a0 = TDRUM->att;                              /* the drum track's mute / solo fade */
     drums.a1 = 32767 - gain_next(TDRUM);

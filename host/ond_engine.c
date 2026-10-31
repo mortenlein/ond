@@ -10,6 +10,7 @@
 #endif
 #define OND_PUNCH 1                     /* the punch-in effects as Brudd's breakers (punch.c: the ring's 64 KB) */
 #define OND_HITS 1                      /* Brudd's hits into the mix (fx.c mix_block, ond_hits_mix below) */
+#define OND_BEAT 1                      /* BEAT: SLOOP's drum machine back on (drums.c, its track's steps; task 015) */
 #ifndef __GNUC__
 #define __attribute__(x)                /* (MSVC: the firmware's section / alignment attributes) */
 #endif
@@ -130,6 +131,31 @@ static void layer_into(uint32_t e, uint32_t pi)
         trk[1].p[LAYER_OWN[i]] = keep[i];
 }
 
+/* BEAT's pattern into the drum track (task 015 step 1: OFF, or TEST: kick 1 and 3, snare 2 and 4, closed hat on
+ * the 8ths, a 16-step bar: the plumbing's check, not a groove; the real ones come from drummers, step 2) */
+static void beat_init(void);
+static void beat_feel(int feel)
+{
+    track_t *t = TDRUM;
+    uint32_t i;
+    for (i = 0; i < NSTEP; i++) {
+        memset(&t->dstep[i], 0, sizeof t->dstep[i]);
+        t->micro[i] = 0;
+    }
+    t->p[P_SLEN] = 16;
+    t->p[P_SDIV] = 2;                           /* 1/16 */
+    if (feel != 1)
+        return;
+    for (i = 0; i < 16u; i++) {
+        if (i % 8u == 0u)
+            dstep_set(&t->dstep[i], 0, LV_NORM, 0);   /* kick */
+        if (i % 8u == 4u)
+            dstep_set(&t->dstep[i], 2, LV_NORM, 0);   /* snare */
+        if (i % 2u == 0u)
+            dstep_set(&t->dstep[i], 4, i % 4u ? LV_SOFT : LV_NORM, 0);   /* hat */
+    }
+}
+
 void ond_init(void)
 {
     uint32_t i, k;
@@ -147,6 +173,7 @@ void ond_init(void)
     trk[1].p[P_LYCH] = 2;
     layer_into(12, 18);                         /* (the layer's first sound: HYBRID DRONE, Ond's drone) */
     trk[1].eng_req = trk[1].engine = 12;
+    beat_init();                                /* BEAT: LO-FI, empty (FEEL OFF) */
 }
 
 void ond_load_layer(int engine, int preset)
@@ -236,9 +263,25 @@ static const param_desc_t LY_FILT_D = {"FILT", F_FILT, -64, 63, 0, 0, 0};
 /* Brudd (Ond's own): CATCH, how long a let-go breaker fights its way back (ms; the SL-1200's 0.7 s at 700), LAND,
  * the grid its return waits for (the plugin holds it till then) */
 static const char *const N_LAND[] = {"OFF", "1/16", "1/8", "1/4"};
+/* BEAT (task 015): FEEL (OFF, TEST: the plumbing's check, not a groove), KIT (the drum track's: SLOOP's synthesised
+ * kits; DRUM_KIT_NAMES), LEVEL (its own: drums.c DR_LVL) */
+static const char *const N_FEEL[] = {"OFF", "TEST"};
+static const param_desc_t FEEL_D = {"FEEL", F_ENUM, 0, 1, 0, N_FEEL, 0};
+static const param_desc_t KIT_D = {"KIT", F_ENUM, DRUM_SAMPLED, DRUM_SAMPLED + DS_NKITS - 1, DRUM_SAMPLED + 8,
+                                   DRUM_KIT_NAMES, 0};   /* (the 32 synthesised kits; LO-FI first) */
+static const param_desc_t BLVL_D = {"LEVEL", F_PCT, 0, 127, 100, 0, 0};
 static const param_desc_t CATCH_D = {"CATCH", F_INT, 0, 1000, 0, 0, "ms"};
 static const param_desc_t LAND_D = {"LAND", F_ENUM, 0, 3, 0, N_LAND, 0};
-static int16_t host_val[2];                    /* CATCH, LAND */
+static int16_t host_val[4];                    /* CATCH, LAND, FEEL, (beat LEVEL: drums.c's own) */
+static void beat_feel(int feel);
+static void beat_init(void)
+{
+    TDRUM->p[P_E0] = (int16_t)KIT_D.def;
+    ond_beat_lvl = 100;
+    host_val[2] = 0;
+    host_val[3] = 100;
+    beat_feel(0);
+}
 static const ctl_t CTL_TAB[] = {
     {"brite", "MACROS", OND_SCOPE_SOUND, P_MAC1, 0},
     {"timbr", "MACROS", OND_SCOPE_SOUND, P_MAC2, 0},
@@ -294,6 +337,9 @@ static const ctl_t CTL_TAB[] = {
     {"layer_filter", "LAYER", OND_SCOPE_LAYER, P_TFLT, 1, &LY_FILT_D},
     {"catch", "BRUDD", OND_SCOPE_HOST, 0, 1, &CATCH_D},                  /* (Ond 0.6) */
     {"land", "BRUDD", OND_SCOPE_HOST, 1, 1, &LAND_D},
+    {"beat_feel", "BEAT", OND_SCOPE_HOST, 2, 1, &FEEL_D},                /* (Ond 0.9) */
+    {"beat_kit", "BEAT", OND_SCOPE_HOST, 4, 1, &KIT_D},
+    {"beat_level", "BEAT", OND_SCOPE_HOST, 3, 1, &BLVL_D},
 };
 
 static const param_desc_t *ctl_desc(int c, int engine)
@@ -337,9 +383,17 @@ void ond_control_set(int c, int v)
     else if (k->scope == OND_SCOPE_LAYER)
         trk[1].p[k->id] = (int16_t)v;
     else if (k->scope == OND_SCOPE_HOST) {
+        if (k->id == 4) {                       /* KIT: the drum track's own slot */
+            TDRUM->p[P_E0] = (int16_t)v;
+            return;
+        }
         host_val[k->id] = (int16_t)v;
         if (k->id == 0)
             ond_breaker_catch(v);
+        if (k->id == 2)
+            beat_feel(v);
+        if (k->id == 3)
+            ond_beat_lvl = (int16_t)v;
     } else
         trk[0].p[k->scope == OND_SCOPE_EDIT ? P_E0 + k->id : k->id] = (int16_t)v;
 }
@@ -355,7 +409,7 @@ int ond_control_get(int c)
     if (k->scope == OND_SCOPE_LAYER)
         return trk[1].p[k->id];
     if (k->scope == OND_SCOPE_HOST)
-        return host_val[k->id];
+        return k->id == 4 ? TDRUM->p[P_E0] : host_val[k->id];
     return trk[0].p[k->scope == OND_SCOPE_EDIT ? P_E0 + k->id : k->id];
 }
 

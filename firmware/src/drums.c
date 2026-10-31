@@ -8,6 +8,18 @@
  * PAN and MUTE: the drum track's P_PAN / P_MUTE. Rendered from the audio ISR. */
 #define NDRUM 6
 #include "drum_synth.c"       /* synthesised kits (DS_KITS) */
+/* (Ond) BEAT: in Clipper the drum globals' slots are the master EQ and COMP (core.h G_EQLOW ..): the beat's level and
+ * sends are its own (host/ond_engine.c) */
+#if CLIPPER_SYNTH && OND_BEAT
+static int16_t ond_beat_lvl = 100, ond_beat_rev, ond_beat_dly;
+#define DR_LVL ond_beat_lvl
+#define DR_REV ond_beat_rev
+#define DR_DLY ond_beat_dly
+#else
+#define DR_LVL song.g[G_DRLVL]
+#define DR_REV song.g[G_DRREV]
+#define DR_DLY song.g[G_DRDLY]
+#endif
 /* P_E0 was unused on the drum track: it holds the kit. 0..4: the GM sample kit and its four
  * treatments (as before: old projects keep their kit), 5..: the synthesised kits, then (2.4) USR1..USR4:
  * a user sample slot as a kit (the web editor's DRUM KIT: a sound per lane, zone lo..hi = the lane's note),
@@ -167,7 +179,7 @@ static void click_render(int32_t *ml, int32_t *mr, uint32_t n)
     int32_t g;
     if (!click.env)
         return;
-    g = (int32_t)((int64_t)click.gain * song.g[G_DRLVL] / 100);
+    g = (int32_t)((int64_t)click.gain * DR_LVL / 100);
     for (i = 0; i < n; i++) {
         int32_t v = (int32_t)(((int64_t)sine_i(click.ph) * (click.env >> 15) >> 15) * g >> 15);
         ml[i] += v;
@@ -324,7 +336,7 @@ static void drum_on(uint32_t note, uint32_t vel)
 static inline void drums_mix(int32_t *ml, int32_t *mr, int32_t *rev, int32_t *dly, int32_t *mono, uint32_t n)
 {
     uint32_t k, i;
-    int32_t lvl = song.g[G_DRLVL] * 200, send = song.g[G_DRREV] * 258, dsend = song.g[G_DRDLY] * 258, pk = drums.peak;
+    int32_t lvl = DR_LVL * 200, send = DR_REV * 258, dsend = DR_DLY * 258, pk = drums.peak;
     int32_t pan = trk[TRK_DRUM].p[P_PAN], gl = 4096 - (pan > 0 ? pan * 64 : 0), gr = 4096 + (pan < 0 ? pan * 64 : 0);
     for (i = 0; i < n && drums.tail; i++) {         /* declick tail, ~0.4 ms */
         if (mono) {

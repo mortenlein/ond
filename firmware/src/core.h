@@ -529,6 +529,11 @@ static int is_drum(const track_t *t) { return t == TDRUM; }
 static int trk_silent(const track_t *t)
 {
     uint32_t i = (uint32_t)(t - trk);
+#ifndef OND_BEAT
+#define OND_BEAT 0               /* (Ond: BEAT, the drum track back in the synth: host/ond_engine.c) */
+#endif
+    if (CLIPPER_SYNTH && OND_BEAT && i == TRK_DRUM)
+        return t->p[P_MUTE];     /* (Ond: the beat's drum track sounds) */
     if (CLIPPER_SYNTH && i)      /* Clipper: only the instrument (track 1) sounds, and its layer (track 2) when on */
         return i != 1u || (trk[1].p[P_LYMODE] != LY_LAYER && trk[1].p[P_LYMODE] != LY_SPLIT && trk[1].p[P_LYMODE] != LY_MULTI);
     return t->p[P_MUTE] || (song.solo && !((song.solo >> i) & 1u));

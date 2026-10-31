@@ -86,10 +86,13 @@ inline const std::vector<int> &paramControls()  // parameter index -> control in
             }
             if (i == find("catch"))
                 m.push_back(-6);                // (0.5) the layer's sound, after 0.5's layer controls
+            if (i == find("beat_feel"))
+                m.push_back(-7);                // (0.7) the hit, before 0.9's BEAT controls
             if (!seen)
                 m.push_back(i);
         }
-        m.push_back(-7);                        // (0.7) the hit
+        if (find("beat_feel") < 0)
+            m.push_back(-7);
         return m;
     }();
     return map;

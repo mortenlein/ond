@@ -62,7 +62,12 @@ half-time, brushes), with timing from the dataset only.
 7. The BEAT view on the screen (like BRUDD / LAYER).
 8. SAVE MIDI.
 
-## Morten decides first
+## Morten decided (2026-10-31)
+
+1. Grooves: **the Groove MIDI Dataset** (real drummers). 2. Sounds: **SLOOP's kits and recordings**. 3. Output: **both**
+   (inside Ond, and SAVE MIDI).
+
+## The questions were
 
 1. Grooves from the **Groove MIDI Dataset** (real drummers, CC BY 4.0), or **hand-written idioms**?
 2. Drum sounds: **SLOOP's kits allowed** (existing code by SLOOP's authors, not Claude's), or **only recordings**
@@ -72,3 +77,10 @@ half-time, brushes), with timing from the dataset only.
 
 ## Done when
 - Morten presses play in Live, picks a feel, and likes the beat under Ond without having programmed a step.
+
+## Step 1 (2026-10-31): the drum machine on, on Live's grid — `refs/015-1/`
+
+`OND_BEAT` (core.h, 0 for the FM-1: its build is the same file) opens SLOOP's drum machine in Ond's desktop
+engine at its five gates: the render (`fx.c`), the drum track's steps (`seq.c`), its note-on (`voice.c`), its
+"only track 1 sounds" (`core.h trk_silent`), and its level and sends (`drums.c DR_*`: Clipper's slots of those
+are the master EQ). Controls: FEEL (OFF / TEST), KIT (SLOOP's 32), LEVEL. hostsim's baseline byte-identical.

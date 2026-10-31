@@ -596,7 +596,8 @@ static void trk_note_on1(track_t *t, uint32_t note, uint32_t vel)
     if (is_drum(t)) {                                   /* the drum track: GM drums (drums.c) */
         if (note == 35u || note == 36u)
             vis_kick_hit = 1;
-#if !CLIPPER_SYNTH || BOARD_SMK37                                      /* (Clipper 1.2: no drum machine, its sounds out of the image) */
+#if !CLIPPER_SYNTH || BOARD_SMK37 || OND_BEAT                          /* (Clipper 1.2: no drum machine, its sounds out of the image;
+                                                                         * Ond's BEAT: back, host/ond_engine.c) */
         drum_on(note, vel);
 #endif
         return;
