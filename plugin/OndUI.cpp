@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cctype>
 #include <string>
 
 typedef struct {                   // (firmware/src/gfx.c: the generated font's shape)
@@ -714,7 +715,7 @@ private:
         const float db = m > 1e-5f ? 20.f * std::log10(m) : -100.f, k = std::fmax(0.f, std::fmin(1.f, (db + 60.f) / 60.f));
         if (k > 0.f)
             fill(bx + 4.f, by + bh - 3.f, (bw - 8.f) * k, 2.f, db > -6.f ? ACCENT : TEXT, db > -6.f ? 1.f : 0.5f, 1.f);
-        pixelText(24.f, 60.f, "0.22", FAINT);
+        pixelText(24.f, 60.f, "0.23", FAINT);
         if (renaming)
             pixelText(bx + bw, by + bh + 6.f, "TYPE A NAME, ENTER", FAINT, 1.f, 1);
     }
@@ -837,7 +838,6 @@ private:
         }
     }
 
-    static constexpr const char *N_FEEL_UI[5] = {"off", "hiphop", "funk", "soul", "jazz"};
     static constexpr const char *PART_KEYS[7] = {"beat_kick", "beat_snare", "beat_rim", "beat_hats", "beat_cymbals",
                                                  "beat_toms", "beat_perc"};
     static constexpr const char *PART_NAMES[7] = {"KICK", "SNARE", "RIM", "HATS", "CYMBALS", "TOMS", "PERC"};
@@ -874,18 +874,21 @@ private:
         const ond_groove_t *g = grooveNow();
         if (!g)
             return;
-        static const char *const KEYS[12] = {"beat_feel", "beat_groove", "beat_drunk", "beat_bars", "beat_fill",
+        static const char *const KEYS[13] = {"beat_feel", "beat_groove", "beat_drunk", "beat_bars", "beat_fill",
                                              "beat_kick", "beat_snare", "beat_rim", "beat_hats", "beat_cymbals",
-                                             "beat_toms", "beat_perc"};
-        int v[12];
-        for (int i = 0; i < 12; ++i) {           // the screen's values (the host's), not the engine's copy
+                                             "beat_toms", "beat_perc", "beat_busy"};
+        int v[13];
+        for (int i = 0; i < 13; ++i) {           // the screen's values (the host's), not the engine's copy
             const int p = ond::paramOfKey(KEYS[i]);
             v[i] = p >= 0 ? (int)std::lround(vals[(size_t)p]) : 0;
         }
         for (int b = 0; b < 8; ++b)
             ond_beat_bar(v, b, vel[b], micro[b]);
         char name[64];
-        std::snprintf(name, sizeof name, "%s %u drummer%u", N_FEEL_UI[(g->feel + 1) % 5], (unsigned)(grooveIndex()),
+        std::string feelName = g->feel < OND_NFEELS ? OND_FEEL_NAMES[g->feel] : "beat";
+        for (char &ch : feelName)
+            ch = ch == ' ' ? '-' : (char)std::tolower((unsigned char)ch);
+        std::snprintf(name, sizeof name, "%s %u drummer%u", feelName.c_str(), (unsigned)(grooveIndex()),
                       (unsigned)g->drummer);
         savedMidi = ond::saveBeatMidi(name, 8, vel, micro, getTempo());
         repaint();
@@ -943,8 +946,10 @@ private:
         if (!savedMidi.empty())                 // (the last SAVE MIDI: where to drag it from)
             pixelText(x0 + 14.f, y0 + 72.f, ("SAVED: BEATS\\" + savedMidi + ".MID - DRAG IT INTO LIVE").c_str(), ACCENT);
         button(x0 + w - 14.f - 120.f, y0 + 40.f, 120.f, 34.f, "NEW", false, -33);
-        static const char *const KEYS[] = {"beat_feel", "beat_groove", "beat_bars", "beat_fill", "beat_drunk",
-                                           "beat_kit", "beat_tone", "beat_dust", "beat_pump", "beat_level"};
+        static const char *const KEYS[] = {"beat_feel", "beat_groove", "beat_busy", "beat_bars", "beat_fill",
+                                           "beat_drunk", "beat_kit", "beat_tone", "beat_dust", "beat_pump",
+                                           "beat_level"};
+        const int nk = (int)(sizeof KEYS / sizeof KEYS[0]);
         {   // the parts of the kit: lit in the groove, dark out of it
             const float gap = 8.f, by = y0 + 96.f, bw = (w - 28.f - 136.f - 6.f * gap) / 7.f;   // (all seven inside)
             pixelText(x0 + 14.f, by + 8.f, "IN THE GROOVE:", DIM);
@@ -954,8 +959,8 @@ private:
                 button(x0 + 150.f + (bw + gap) * (float)k, by, bw, 32.f, PART_NAMES[k], in, -6000 - k);   // (to x0 + w - 14)
             }
         }
-        const float cw = (w - 28.f) / 10.f, cy = y0 + 236.f;
-        for (int i = 0; i < 10; ++i) {
+        const float cw = (w - 28.f) / (float)nk, cy = y0 + 236.f;
+        for (int i = 0; i < nk; ++i) {
             const int p = ond::paramOfKey(KEYS[i]);
             if (p < 0)
                 continue;

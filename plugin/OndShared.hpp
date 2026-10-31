@@ -74,7 +74,8 @@ inline const std::vector<int> &paramControls()  // parameter index -> control in
             m.push_back(find(k));
         // (ids stay: 0.4's Brudd parameters after 0.3's controls; anything newer after them, at the end)
         const int newer = find("layer_mode");
-        for (int i = 0; i < ond_control_count(); ++i) {
+        const int last = find("beat_busy");     // (0.23 on: new controls after PLAY and the transport, ids stay)
+        for (int i = 0; i < (last >= 0 ? last : ond_control_count()); ++i) {
             bool seen = false;
             for (const char *k : FIRST)
                 seen |= find(k) == i;
@@ -95,6 +96,8 @@ inline const std::vector<int> &paramControls()  // parameter index -> control in
             m.push_back(-7);
         m.push_back(-8);                        // (0.10) PLAY: Ond's own transport, Live stopped
         m.push_back(-9);                        // (0.10) the transport's state (out)
+        for (int i = last; last >= 0 && i < ond_control_count(); ++i)
+            m.push_back(i);
         return m;
     }();
     return map;

@@ -86,7 +86,7 @@ void ond_kit_set(int lane, const float *l, const float *r, uint32_t frames);
 /* bar `bar` of BEAT as it plays with these values (v: FEEL GROOVE DRUNK BARS FILL, then the 7 parts in = 1: KICK SNARE
  * RIM HATS CYMBALS TOMS PERC): per 16th and lane the velocity (0: none), per 16th the nudge in 1/64 of a step. 0: BEAT
  * off. Pure (the tables only): for SAVE MIDI, from the screen's own values */
-int ond_beat_bar(const int *v, int bar, uint8_t vel[16][16], int8_t micro[16]);
+int ond_beat_bar(const int *v, int bar, uint8_t vel[16][16], int8_t micro[16]);   /* v: 13 values (0.23: v[12] BUSY) */
 void ond_hit(int slot, int velocity);
 
 /* n frames (a multiple of OND_BLOCK) of stereo at OND_FS, -1..1 */

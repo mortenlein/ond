@@ -80,7 +80,7 @@ protected:
     const char *getMaker() const override { return "Morten Lein"; }
     const char *getHomePage() const override { return "https://github.com/mortenlein/ond"; }
     const char *getLicense() const override { return "GPL-3.0-only"; }
-    uint32_t getVersion() const override { return d_version(0, 22, 0); }
+    uint32_t getVersion() const override { return d_version(0, 23, 0); }
 
     // "preset": the player's preset loaded on the screen (its name; "" a factory sound), kept with the Live set
     // so the screen shows it again. The sound itself is in the parameters.
@@ -364,7 +364,7 @@ private:
             {"beat_perc", "Beat Perc"}, {"beat_pump", "Beat Pump"}, {"beat_tone", "Beat Tone"},
             {"beat_dust", "Beat Dust"}, {"wear", "Wear"}, {"link_wear", "Link: Share Wear"},
             {"link_pump", "Link: Pump"}, {"link_drone", "Link: Drone Follows"}, {"link_drone_oct", "Link: Drone Octave"},
-            {"link_brudd", "Link: Brudd"}};
+            {"link_brudd", "Link: Brudd"}, {"beat_busy", "Beat Busy"}};
         for (const auto &n : N)
             if (!std::strcmp(n[0], key))
                 return n[1];
@@ -618,11 +618,11 @@ private:
         auto &me = hub.slot[linkSlot];
         for (int w = 0; w < 4; ++w)             // the keys held here
             me.notes[w] = held[w];
-        static const char *const BK[12] = {"beat_feel", "beat_groove", "beat_drunk", "beat_bars", "beat_fill",
+        static const char *const BK[13] = {"beat_feel", "beat_groove", "beat_drunk", "beat_bars", "beat_fill",
                                            "beat_kick", "beat_snare", "beat_rim", "beat_hats", "beat_cymbals",
-                                           "beat_toms", "beat_perc"};
+                                           "beat_toms", "beat_perc", "beat_busy"};
         int feel = 0;
-        for (int i = 0; i < 12; ++i) {          // this Ond's BEAT, for the others to work out its kicks
+        for (int i = 0; i < 13; ++i) {          // this Ond's BEAT, for the others to work out its kicks
             const int p = ond::paramOfKey(BK[i]);
             const int v = p >= 0 ? (int)std::lround(values[p].load()) : 0;
             me.beat[i] = v;
@@ -651,8 +651,8 @@ private:
             for (int i = 0; i < ond::LinkHub::SLOTS && pumpCount < 32; ++i) {
                 if (i == linkSlot || !hub.slot[i].owner.load() || !hub.slot[i].beatOn.load())
                     continue;
-                int v[12];
-                for (int k = 0; k < 12; ++k)
+                int v[13];
+                for (int k = 0; k < 13; ++k)
                     v[k] = hub.slot[i].beat[k];
                 for (int bar = (int)(b0 / 4.0); bar <= (int)(b1 / 4.0); ++bar) {
                     uint8_t vel[16][16];

@@ -156,6 +156,33 @@ static void beat_init(void);
 static const ond_groove_t *beat_g;              /* the groove (0: off) */
 static uint16_t beat_out_lanes;
 static int32_t beat_drunk_now = 100, beat_nbars = 2, beat_fill_every;
+static int32_t beat_busy = 100;
+/* BUSY (Ond 0.23; Morten: "too busy ... more groovy, not hitting every beat"): the drummer's playing thinned the way a
+ * drummer simplifies, never at random (each bar the same). 100: as played. Lower, in this order: the ghost notes go
+ * (<85; the kick's stay), the hats and ride from 16ths to 8ths (<70), the toms, percussion, rim and soft extras go (<50), the hats to
+ * quarters and the crash only on the one (<35), at the bottom kick and snare alone, the kick's pickups gone (<20).
+ * (Levels as gen_grooves.py: 0 normal, 1 ghost, 2 soft, 3 hard. An invented order: a note, not a measurement.) */
+static int beat_keep(uint32_t l, uint32_t lvl, uint32_t step, int32_t busy)
+{
+    const int kick = l <= 1u, snare = l == 2u || l == 3u || l == 8u, time = (l >= 4u && l <= 6u) || l == 12u;
+    if (busy >= 100)
+        return 1;
+    if (lvl == 1u && !kick && busy < 85)       /* (a light-footed kick is still the kick) */
+        return 0;
+    if (time && (step & 1u) && busy < 70)
+        return 0;
+    if (!kick && !snare && !time && l != 11u && busy < 50)
+        return 0;
+    if (lvl == 2u && !kick && !snare && busy < 50)
+        return 0;
+    if (time && (step & 3u) && busy < 35)
+        return 0;
+    if (l == 11u && step && busy < 35)
+        return 0;
+    if (busy < 20 && (!(kick || snare) || (kick && (step & 1u))))
+        return 0;
+    return 1;
+}
 static int32_t beat_half[2] = {-1, -1};         /* the bar each half holds */
 static void beat_write(uint32_t half, int32_t bar)
 {
@@ -172,7 +199,8 @@ static void beat_write(uint32_t half, int32_t bar)
         int32_t m = (src[i].micro * beat_drunk_now + (src[i].micro >= 0 ? 50 : -50)) / 100;
         memset(&t->dstep[k], 0, sizeof t->dstep[k]);
         for (l = 0; l < DRUM_LANES; l++)
-            if ((src[i].on >> l) & 1u && !((beat_out_lanes >> l) & 1u))
+            if ((src[i].on >> l) & 1u && !((beat_out_lanes >> l) & 1u) &&
+                beat_keep(l, (src[i].lvl >> (2u * l)) & 3u, i, beat_busy))
                 dstep_set(&t->dstep[k], l, (src[i].lvl >> (2u * l)) & 3u, 0);
         t->micro[k] = (int8_t)(m < MICRO_MIN ? MICRO_MIN : m > MICRO_MAX ? MICRO_MAX : m);
     }
@@ -388,6 +416,7 @@ static const param_desc_t LPUMP_D = {"PUMP", F_ENUM, 0, 1, 0, N_ONOFF2, 0};
 static const param_desc_t LDRONE_D = {"DRONE", F_ENUM, 0, 2, 0, N_FOLLOW, 0};
 static const param_desc_t LDOCT_D = {"OCT", F_ENUM, 0, 2, 1, N_FOCT, 0};
 static const param_desc_t LBRUDD_D = {"BRUDD", F_ENUM, 0, 1, 0, N_ONOFF2, 0};
+static const param_desc_t BUSY_D = {"BUSY", F_INT, 0, 100, 100, 0, "%"};   /* (0.23: beat_keep) */
 static int16_t own_dust;                        /* the DUST knob's own value; DUST heard = it + WEAR */
 static const param_desc_t FILL_D = {"FILL", F_ENUM, 0, 2, 2, N_FILL, 0};
 /* the parts of the kit, each in or out of the groove (Morten: "toggle things out of the loop"): drums.c's lanes */
@@ -410,7 +439,7 @@ static const param_desc_t KIT_D = {"KIT", F_ENUM, DRUM_SAMPLED, DRUM_SAMPLED + D
 static const param_desc_t BLVL_D = {"LEVEL", F_PCT, 0, 127, 100, 0, 0};
 static const param_desc_t CATCH_D = {"CATCH", F_INT, 0, 1000, 0, 0, "ms"};
 static const param_desc_t LAND_D = {"LAND", F_ENUM, 0, 3, 0, N_LAND, 0};
-static int16_t host_val[25];                   /* CATCH, LAND, FEEL, (beat LEVEL: drums.c's own), -, GROOVE, DRUNK,
+static int16_t host_val[26];                   /* CATCH, LAND, FEEL, (beat LEVEL: drums.c's own), -, GROOVE, DRUNK,
                                                 * BARS, FILL, the 7 parts in / out */
 static void beat_load(void) { beat_pattern(host_val[2], host_val[5], host_val[6], host_val[7], host_val[8]); }
 static void beat_refresh(void);
@@ -430,6 +459,7 @@ static void beat_init(void)
     host_val[20] = 1;
     host_val[21] = host_val[22] = host_val[24] = 0;
     host_val[23] = 1;
+    host_val[25] = beat_busy = 100;
     {
         int k;
         for (k = 0; k < 7; k++)
@@ -516,6 +546,7 @@ static const ctl_t CTL_TAB[] = {
     {"link_drone", "LINK", OND_SCOPE_HOST, 22, 1, &LDRONE_D},
     {"link_drone_oct", "LINK", OND_SCOPE_HOST, 23, 1, &LDOCT_D},
     {"link_brudd", "LINK", OND_SCOPE_HOST, 24, 1, &LBRUDD_D},
+    {"beat_busy", "BEAT", OND_SCOPE_HOST, 25, 1, &BUSY_D},              /* (Ond 0.23) */
 };
 
 static const param_desc_t *ctl_desc(int c, int engine)
@@ -589,6 +620,10 @@ void ond_control_set(int c, int v)
             ond_beat_pump = (int16_t)v;
         if (k->id == 18)
             ond_beat_dust = (int16_t)v;
+        if (k->id == 25) {                      /* BUSY: from the next step (both bars written again) */
+            beat_busy = v;
+            beat_refresh();
+        }
         if (k->id == 19)                        /* WEAR: on top of the DUST knob */
             song.g[G_DUST] = (int16_t)clamp(own_dust + v, 0, 127);
     } else
@@ -710,7 +745,7 @@ int ond_beat_bar(const int *v, int bar, uint8_t vel[16][16], int8_t micro[16])
     const ond_groove_t *g = 0;
     const ond_gstep_t *src;
     int feel, i, l, n = 0, k, nb, every, c;
-    int key[5];                                     /* feel groove drunk bars fill */
+    int key[5];                                     /* feel groove drunk bars fill (v[5..11] the parts, v[12] BUSY) */
     uint16_t out = 0;
     for (i = 0; i < 5; i++)
         key[i] = v[i];
@@ -737,7 +772,8 @@ int ond_beat_bar(const int *v, int bar, uint8_t vel[16][16], int8_t micro[16])
         int32_t m = (src[i].micro * key[2] + (src[i].micro >= 0 ? 50 : -50)) / 100;
         micro[i] = (int8_t)(m < MICRO_MIN ? MICRO_MIN : m > MICRO_MAX ? MICRO_MAX : m);
         for (l = 0; l < 16; l++)
-            if ((src[i].on >> l) & 1u && !((out >> l) & 1u))
+            if ((src[i].on >> l) & 1u && !((out >> l) & 1u) &&
+                beat_keep((uint32_t)l, (src[i].lvl >> (2u * l)) & 3u, (uint32_t)i, v[12]))
                 vel[i][l] = (uint8_t)lvl_vel((src[i].lvl >> (2u * l)) & 3u, 100);
     }
     return 1;

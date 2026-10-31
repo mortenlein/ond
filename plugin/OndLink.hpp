@@ -15,7 +15,7 @@ struct LinkHub {
     struct Slot {
         std::atomic<uint32_t> owner{0};         // 0 free, else the Ond's id
         std::atomic<uint32_t> notes[4];         // the keys held in it (128 bits; Ond's own low notes left out)
-        std::atomic<int32_t> beat[12];          // BEAT's values as ond_beat_bar takes them (FEEL 0: no beat)
+        std::atomic<int32_t> beat[13];          // BEAT's values as ond_beat_bar takes them (FEEL 0: no beat)
         std::atomic<int32_t> beatOn{0};         // its BEAT plays with Live (FEEL on, Live playing)
         std::atomic<int32_t> breaker{-1};       // the breaker its own pads / screen hold (-1 none)
         std::atomic<uint32_t> breakerSeq{0};    // (the latest pressed of all wins)

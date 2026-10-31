@@ -224,6 +224,41 @@
       Math.round(buf / rate * 1000) + ' MS · LOAD ' + Math.round(load * 100) + '%';
   }, 500);
 
+  // touch on the screen: one finger is the mouse, nothing else. DPF's own touch handling (pugl's wasm.c) listens on
+  // the whole window, takes the first finger anywhere (a finger on the keys too) as the click, and holds each tap
+  // up to 2 s for a long press: taps landed elsewhere, knobs jumped. So no touch event reaches it (nor the mouse
+  // events a browser makes up after a tap); the screen gets mouse events from the first finger on it only.
+  ['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach(function (type) {
+    window.addEventListener(type, function (e) {
+      e.stopImmediatePropagation();
+      if (!(e.target && e.target.closest && e.target.closest('a'))) e.preventDefault();
+    }, { capture: true, passive: false });
+  });
+  var screenFinger = null;
+  function toScreen(type, e, target) {
+    target.dispatchEvent(new MouseEvent(type, { clientX: e.clientX, clientY: e.clientY, screenX: e.screenX,
+      screenY: e.screenY, button: 0, buttons: type === 'mouseup' ? 0 : 1, bubbles: true, cancelable: true }));
+  }
+  document.addEventListener('pointerdown', function (e) {
+    var c = document.getElementById('canvas');
+    if (e.pointerType === 'mouse' || e.target !== c || screenFinger !== null) return;
+    screenFinger = e.pointerId;
+    try { c.setPointerCapture(e.pointerId); } catch (x) {}
+    wake();
+    toScreen('mousemove', e, c);
+    toScreen('mousedown', e, c);
+  }, true);
+  document.addEventListener('pointermove', function (e) {
+    if (e.pointerId === screenFinger) toScreen('mousemove', e, document.getElementById('canvas'));
+  }, true);
+  function screenUp(e) {
+    if (e.pointerId !== screenFinger) return;
+    screenFinger = null;
+    toScreen('mouseup', e, document.getElementById('canvas'));
+  }
+  document.addEventListener('pointerup', screenUp, true);
+  document.addEventListener('pointercancel', screenUp, true);
+
   // the fit: the screen (1000 x 700) above the keys. On a phone the page is laid out wide enough for both and the
   // browser scales it to the glass; on a computer the window is what it is.
   var meta = document.querySelector('meta[name=viewport]'), last = '';
