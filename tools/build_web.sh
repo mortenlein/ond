@@ -49,6 +49,7 @@ PYEOF
 # each version asks for its own Ond.js / Ond.wasm (the server caches them an hour; Ond.html is never cached)
 V="${OND_WEB_VERSION:-0.$(grep -o 'd_version(0, [0-9]*' plugin/OndPlugin.cpp | grep -o '[0-9]*$')}"
 sed -i "s|\"Ond.js\")|\"Ond.js?v=$V\")|" build/web/Ond.html
+sed -i "s|__OND_WEB_V__|$V|g" build/web/Ond.html
 sed -i "s|locateFile(\"Ond.wasm\")|locateFile(\"Ond.wasm?v=$V\")|" build/web/Ond.js
 # the release (docs/tasks/012-web.md: ashguard deploys the newest web-* release)
 rm -f build/ond-web-*.zip*

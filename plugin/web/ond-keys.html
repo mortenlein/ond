@@ -36,12 +36,23 @@
     <div class="row"><button id="ond-od">OCT -</button><button id="ond-ou">OCT +</button></div>
     <div class="oct" id="ond-oct">OCT 0</div>
     <div class="row"><button id="ond-brudd">BRUDD</button></div>
-    <a href="https://github.com/mortenlein/ond" target="_blank" rel="noopener">Ond: GPL-3.0, source</a>
+    <a href="https://github.com/mortenlein/ond" target="_blank" rel="noopener">web __OND_WEB_V__ · GPL-3.0, source</a>
   </div>
   <div id="ond-kb"></div>
 </div>
 <script>
 (function () {
+  // an error, in full on the page (a phone has no console): the message, where, the version
+  var dpfError = window.onerror;
+  window.onerror = function (msg, src, line, col, err) {
+    if (dpfError) dpfError(msg);
+    var box = document.getElementById('error');
+    if (box) {
+      box.style.display = 'block';
+      box.textContent = 'Ond web __OND_WEB_V__: ' + msg + ' (' + String(src).split('/').pop() + ':' + line + ':' + col + ') ' +
+        String(err && err.stack || '').slice(0, 600);
+    }
+  };
   var NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   var FIRST = 53, COUNT = 27;            // F3..G5, the FM-1's keys
   var root = document.getElementById('ond-keys'), kb = document.getElementById('ond-kb');
