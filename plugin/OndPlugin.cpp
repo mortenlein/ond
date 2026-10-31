@@ -7,6 +7,7 @@
 #include "DistrhoPlugin.hpp"
 #include "OndEngineLoader.hpp"
 #include "OndLink.hpp"
+#include "OndLog.hpp"
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 // The web page's own keys (plugin/web/ond-keys.html): one Ond a page, and its audio runs on the page's thread, so a
@@ -80,7 +81,7 @@ protected:
     const char *getMaker() const override { return "Morten Lein"; }
     const char *getHomePage() const override { return "https://github.com/mortenlein/ond"; }
     const char *getLicense() const override { return "GPL-3.0-only"; }
-    uint32_t getVersion() const override { return d_version(0, 25, 0); }
+    uint32_t getVersion() const override { return d_version(0, 26, 0); }
 
     // "preset": the player's preset loaded on the screen (its name; "" a factory sound), kept with the Live set
     // so the screen shows it again. The sound itself is in the parameters.
@@ -104,7 +105,9 @@ protected:
             setPads(ond::PadMap::parse(value));
         else if (!std::strcmp(key, "hits") && value[0])
             loadHits();
-        else if (!std::strcmp(key, "stop") && value[0])
+        if (value[0])
+            ond::EventLog::get().add('S', key[0], 1.f);
+        if (!std::strcmp(key, "stop") && value[0])
             stopWanted = true;                  // (the screen's STOP: at the next run)
     }
 
@@ -218,6 +221,8 @@ protected:
         const int c = ond::paramControls()[index];
         if (c == -2 || c == -4 || c == -5 || c == -9)
             return;                             // (the outputs: meter, breaker playing, MIDI in, transport)
+        if (values[index].load() != value)
+            ond::EventLog::get().add('P', (int)index, value);
         values[index] = value;
         if ((int)index == linkParam("wear"))
             wearMoved = true;                   // (LINK: a WEAR of this Ond's to share)

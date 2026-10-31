@@ -6,6 +6,7 @@
 #include "DistrhoUI.hpp"
 #include "OndPresets.hpp"
 #include "OndLink.hpp"
+#include "OndLog.hpp"
 #include "OndShared.hpp"
 #include "ond_grooves.h"
 #include <algorithm>
@@ -94,6 +95,12 @@ protected:
     {
         if (index >= vals.size() || vals[index] == value)
             return;
+        if (index < mineAt.size() && ond::EventLog::now() - mineAt[index] < 400.0) {
+            ond::EventLog::get().add('X', (int)index, value);   // (just set here: an echo of the old value, not kept)
+            return;
+        }
+        if (index != (uint32_t)ond::meterParam())
+            ond::EventLog::get().add('C', (int)index, value);
         vals[index] = value;
         if ((int)index == ond::midiInParam() && !((int)value & 128) && ((int)value & 127) >= ond::NOTE_DRUMS &&
             ((int)value & 127) < ond::NOTE_DRUMS + 16)
@@ -120,6 +127,8 @@ protected:
         modified = false;                  // is not known: shown as saved)
         repaint();
     }
+
+    void uiIdle() override { ond::EventLog::get().flush(); }
 
     void onNanoDisplay() override
     {
@@ -185,6 +194,7 @@ protected:
         for (const Hit &h : hits) {
             if (x < h.x || x >= h.x + h.w || y < h.y || y >= h.y + h.h)
                 continue;
+            ond::EventLog::get().add('K', h.param, 0.f);   // (a click the screen took, on this)
             if (h.param == -10 || h.param == -11) {
                 step(h.param == -11 ? 1 : -1);
             } else if (h.param == -12) {
@@ -397,6 +407,9 @@ private:
         if (vals[(size_t)param] == v)
             return;
         vals[(size_t)param] = v;
+        ond::EventLog::get().add('U', param, v);
+        if ((size_t)param < mineAt.size())
+            mineAt[(size_t)param] = ond::EventLog::now();
         if (edit)
             editParameter((uint32_t)param, true);
         setParameterValue((uint32_t)param, v);
@@ -725,7 +738,7 @@ private:
         const float db = m > 1e-5f ? 20.f * std::log10(m) : -100.f, k = std::fmax(0.f, std::fmin(1.f, (db + 60.f) / 60.f));
         if (k > 0.f)
             fill(bx + 4.f, by + bh - 3.f, (bw - 8.f) * k, 2.f, db > -6.f ? ACCENT : TEXT, db > -6.f ? 1.f : 0.5f, 1.f);
-        pixelText(24.f, 60.f, "0.25", FAINT);
+        pixelText(24.f, 60.f, "0.26", FAINT);
         button(66.f, 54.f, 64.f, 22.f, "STOP", false, -40);   // every sound off (and Ond's own PLAY)
         if (renaming)
             pixelText(bx + bw, by + bh + 6.f, "TYPE A NAME, ENTER", FAINT, 1.f, 1);
@@ -1276,6 +1289,7 @@ private:
     }
 
     std::vector<float> vals;
+    std::vector<double> mineAt = std::vector<double>(512, -1e9);   // (when the screen set each: echoes ignored)
     std::vector<Hit> hits;
     int drag = -1, lastParam = -1;
     float dragY = 0.f, dragStart = 0.f;
