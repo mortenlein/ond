@@ -12,7 +12,8 @@ if [ "$(uname -s)" != Linux ] && command -v wsl.exe >/dev/null 2>&1; then
 fi
 EMSDK="${EMSDK:-$HOME/emsdk}"
 [ -f "$EMSDK/emsdk_env.sh" ] || { echo "build_web: no emsdk in $EMSDK (git clone emsdk, ./emsdk install latest, activate)"; exit 1; }
-. "$EMSDK/emsdk_env.sh" >/dev/null 2>&1
+export PATH="$EMSDK:$EMSDK/upstream/emscripten:$PATH"   # (emsdk_env.sh wants bash; its paths are these)
+export EMSDK
 PY="${PYTHON:-python3}"
 [ -f third_party/DPF/dgl/src/pugl-upstream/include/pugl/pugl.h ] || git submodule update --init --recursive third_party/DPF
 mkdir -p build/gen build/web
