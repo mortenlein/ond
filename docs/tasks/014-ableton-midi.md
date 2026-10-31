@@ -106,3 +106,9 @@ wear → 7. Step 1 is a sound change only in DUST's hiss following Live's PLAY: 
 Notes 0–7 = hits 1–8, 8–15 = the eight breakers, any channel, nothing to learn (LEARN overrides). Map and the MPK
 editor settings: `docs/ableton.md`. Tested through the plugin: note 9 held = STOP (it lands on its frame: 58
 samples, where the `Breaker` parameter, applied per host block, can be 221 early); note 21 (A0) plays as a key.
+
+## Step 3 (2026-10-31): a clip's `Sound` envelope alone — checked
+
+CHAPEL playing, then only `Sound` set (as a clip envelope does) to SOFT FLUTE / STRING ORG / REED ORGAN: the next
+chord is that sound as loaded whole (spectrum 1.000 / 0.995 / 0.999, level within 0.2 dB). (SPACE DRONE cannot be
+compared this way: its vector moves at random, by design.)
