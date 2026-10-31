@@ -389,6 +389,14 @@ private:
         setInt(param, info.kept ? info.def : ond_preset_value(c, s.engine, s.preset));
     }
 
+    bool learnedElsewhere(int note) const  // a default note taken by LEARN for another pad
+    {
+        for (int c : pads.code)
+            if (c == note)
+                return true;
+        return false;
+    }
+
     void storePads()                       // to the plugin (the set keeps it) and for every set
     {
         const std::string t = pads.text();
@@ -664,7 +672,7 @@ private:
         const float db = m > 1e-5f ? 20.f * std::log10(m) : -100.f, k = std::fmax(0.f, std::fmin(1.f, (db + 60.f) / 60.f));
         if (k > 0.f)
             fill(bx + 4.f, by + bh - 3.f, (bw - 8.f) * k, 2.f, db > -6.f ? ACCENT : TEXT, db > -6.f ? 1.f : 0.5f, 1.f);
-        pixelText(24.f, 60.f, "0.5", FAINT);
+        pixelText(24.f, 60.f, "0.8", FAINT);
         if (renaming)
             pixelText(bx + bw, by + bh + 6.f, "TYPE A NAME, ENTER", FAINT, 1.f, 1);
     }
@@ -713,11 +721,9 @@ private:
                 stroke();
             }
             pixelText(px + pw / 2.f, py + ph / 2.f - 8.f, ond_breaker_name(i), on ? BG : TEXT, 1.f, 0);
-            std::string tag = ond::codeName(pads.code[i]);   // its pad: learned, else channel 10's bank B
-            if (pads.empty())
-                for (int k = 0; k < 8; ++k)
-                    if (ond::PAD_B[k] == i)
-                        tag = "CH10 " + std::to_string(ond::PAD_B_FIRST + k);
+            std::string tag = ond::codeName(pads.code[i]);   // its pad: learned, else its own note (0..15)
+            if (tag.empty() && ond::defaultNoteOf(i) >= 0 && !learnedElsewhere(ond::defaultNoteOf(i)))
+                tag = ond::codeName(ond::defaultNoteOf(i));
             if (!tag.empty())
                 pixelText(px + 10.f, py + 8.f, tag.c_str(), on ? BG : armed || learning ? ACCENT : FAINT);
             hits.push_back({px, py, pw, ph, -4000 - i});
@@ -737,8 +743,8 @@ private:
                 name = name.substr(0, 9) + ".";
             pixelText(px + pw / 2.f, py + ph / 2.f - 4.f, name.c_str(), has ? TEXT : FAINT, 1.f, 0);
             std::string tag = ond::codeName(pads.code[ond::NBREAK + k]);
-            if (tag.empty() && pads.empty())
-                tag = "CH10 " + std::to_string(ond::PAD_A_FIRST + k);
+            if (tag.empty() && !learnedElsewhere(ond::defaultNoteOf(ond::NBREAK + k)))
+                tag = ond::codeName(ond::defaultNoteOf(ond::NBREAK + k));
             pixelText(px + 8.f, py + 6.f, tag.empty() ? "HIT" : tag.c_str(), armed || learning ? ACCENT : FAINT);
             hits.push_back({px, py, pw, ph, -5000 - k});
         }

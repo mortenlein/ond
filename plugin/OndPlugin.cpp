@@ -309,9 +309,14 @@ private:
     {
         for (int c = 0; c < 256; ++c)
             padOf[c] = -1;
+        for (int c = 0; c < 128; ++c)
+            learnedNote[c] = false;
         for (int b = 0; b < ond::NPAD; ++b)
-            if (m.code[b] >= 0)
+            if (m.code[b] >= 0) {
                 padOf[m.code[b]] = (int8_t)b;
+                if (m.code[b] < 128)
+                    learnedNote[m.code[b]] = true;
+            }
         padsLearned = !m.empty();
         padsText = m.text();
     }
@@ -330,6 +335,8 @@ private:
             midiSeen = ((midiSeen / 4096 + 1) % 16) * 4096 + (st & 0x0F) * 256 + (cc ? 128 : 0) + (d1 & 127);
         if (note || cc)
             b = padOf[(cc ? 128 : 0) + (d1 & 127)];
+        if (b < 0 && note && !learnedNote[d1 & 127])
+            b = ond::defaultPadOf(d1 & 127);     // Brudd's own notes 0..15, unless learned for another
         if (b < 0 && !padsLearned && note && (st & 0x0Fu) == 9u) {
             const int pad = (int)d1 - ond::PAD_B_FIRST, hit = (int)d1 - ond::PAD_A_FIRST;
             if (hit >= 0 && hit < 8)
@@ -504,6 +511,7 @@ private:
     HitBank *hitsLive = nullptr;
     int hitNow = 0;
     std::atomic<int8_t> padOf[256];
+    std::atomic<bool> learnedNote[128];          // (a note learned for something: not its default any more)
     std::atomic<bool> padsLearned{false};
     std::string padsText;
     bool owner = false;

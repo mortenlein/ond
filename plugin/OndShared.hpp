@@ -136,6 +136,29 @@ inline constexpr int LAYER_SOUND_DEF = 4;   // sounds()[4]: HYBRID DRONE, as ond
 inline constexpr int PAD_B_FIRST = 44;
 inline constexpr int PAD_B[8] = {4, 6, 13, 11, 7, 5, 0, 14};
 
+// (0.8, Morten's choice A, docs/tasks/014) Brudd's own notes, below every keyboard (an 88-key starts at 21): notes
+// 0..7 the hits 1..8, notes 8..15 the eight breakers above (PAD_B's order), on any channel, with nothing learned.
+// The MPK's pads set to them (its editor) record into a Live clip as plain notes, rows of their own; LEARN still
+// takes a note or CC over them
+inline constexpr int NOTE_HITS = 0, NOTE_BREAKERS = 8;
+inline int defaultPadOf(int note)          // the hit (NBREAK + k) or breaker a note is by default, -1 none
+{
+    if (note >= NOTE_HITS && note < NOTE_HITS + 8)
+        return 16 + (note - NOTE_HITS);
+    if (note >= NOTE_BREAKERS && note < NOTE_BREAKERS + 8)
+        return PAD_B[note - NOTE_BREAKERS];
+    return -1;
+}
+inline int defaultNoteOf(int pad)          // the other way: a breaker's or hit's own note, -1 none
+{
+    if (pad >= 16 && pad < 24)
+        return NOTE_HITS + pad - 16;
+    for (int k = 0; k < 8; ++k)
+        if (PAD_B[k] == pad)
+            return NOTE_BREAKERS + k;
+    return -1;
+}
+
 // pads learned on the screen (LEARN in the BRUDD view): breaker -> the MIDI that plays it, on any channel (Live
 // hands a plugin everything on channel 1): a note 0..127, a CC 128 + number, -1 none. As text, for the plugin's
 // state and Documents/Ond/pads.txt: "4=n44 6=c20" (breaker=note / cc)

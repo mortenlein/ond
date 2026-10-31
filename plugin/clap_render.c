@@ -5,7 +5,8 @@
  * A second instance is made, activated and run alongside: it must stay silent (one engine per process).
  *   clap_render PLUGIN.clap OUT.wav [RATE [SOUND [DUST [NAME=VALUE | @SECONDS:NAME=VALUE ...]]]]
  * (NAME: a parameter's name; @SECONDS: set at that time, e.g. @4.0:Breaker=7 @6.0:Breaker=0)
- * transport=BPM: the host plays from beat 0 at BPM (4/4), as Live's transport; loop=A:B: it loops beats A..B */
+ * transport=BPM: the host plays from beat 0 at BPM (4/4), as Live's transport; loop=A:B: it loops beats A..B
+ * @T:note=N, @T:off=N: a key down / up at T (e.g. Brudd's own notes 0..15) */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -151,6 +152,11 @@ int main(int argc, char **argv)
                     continue;
                 memcpy(name, arg, (size_t)(eq - arg));
                 name[eq - arg] = 0;
+                if (!strcmp(name, "note") || !strcmp(name, "off")) {   /* @T:note=N / @T:off=N: a key */
+                    add_note(&el, at - f, !strcmp(name, "note") ? CLAP_EVENT_NOTE_ON : CLAP_EVENT_NOTE_OFF,
+                             (int16_t)atoi(eq + 1));
+                    continue;
+                }
                 add_param(&el, param_id(pl[c], name), atof(eq + 1));
                 el.ev[el.n - 1].h.time = at - f;
             }
