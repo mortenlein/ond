@@ -368,6 +368,9 @@ static const char *const N_FILL[] = {"OFF", "4", "8"};
 static const param_desc_t BARS_D = {"BARS", F_ENUM, 0, 1, 1, N_BARS, 0};
 /* PUMP: each kick dips the instrument, back over an eighth (SLOOP's DUCK, fx.c duck_block: (1 - t / T)^2) */
 static const param_desc_t PUMP_D = {"PUMP", F_PCT, 0, 127, 0, 0, 0};
+/* TONE: the drum track's own filter (SLOOP 2.4's P_TFLT, fx.c djf: < 0 a low-pass closing, > 0 a high-pass): muffled,
+ * far-away drums one way, thin the other; OFF at 0 */
+static const param_desc_t TONE_D = {"TONE", F_FILT, -64, 63, 0, 0, 0};
 static const param_desc_t FILL_D = {"FILL", F_ENUM, 0, 2, 2, N_FILL, 0};
 /* the parts of the kit, each in or out of the groove (Morten: "toggle things out of the loop"): drums.c's lanes */
 static const char *const N_INOUT[] = {"OUT", "IN"};
@@ -482,6 +485,7 @@ static const ctl_t CTL_TAB[] = {
     {"beat_toms", "BEAT", OND_SCOPE_HOST, 15, 1, &PART_D[5]},
     {"beat_perc", "BEAT", OND_SCOPE_HOST, 16, 1, &PART_D[6]},
     {"beat_pump", "BEAT", OND_SCOPE_HOST, 9, 1, &PUMP_D},                /* (Ond 0.14) */
+    {"beat_tone", "BEAT", OND_SCOPE_HOST, 17, 1, &TONE_D},               /* (Ond 0.15) */
 };
 
 static const param_desc_t *ctl_desc(int c, int engine)
@@ -529,6 +533,10 @@ void ond_control_set(int c, int v)
             TDRUM->p[P_E0] = (int16_t)v;
             return;
         }
+        if (k->id == 17) {                      /* TONE: the drum track's filter */
+            TDRUM->p[P_TFLT] = (int16_t)v;
+            return;
+        }
         host_val[k->id] = (int16_t)v;
         if (k->id == 0)
             ond_breaker_catch(v);
@@ -561,7 +569,7 @@ int ond_control_get(int c)
     if (k->scope == OND_SCOPE_LAYER)
         return trk[1].p[k->id];
     if (k->scope == OND_SCOPE_HOST)
-        return k->id == 4 ? TDRUM->p[P_E0] : host_val[k->id];
+        return k->id == 4 ? TDRUM->p[P_E0] : k->id == 17 ? TDRUM->p[P_TFLT] : host_val[k->id];
     return trk[0].p[k->scope == OND_SCOPE_EDIT ? P_E0 + k->id : k->id];
 }
 

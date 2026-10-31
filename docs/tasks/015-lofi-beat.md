@@ -122,3 +122,9 @@ sample.
 SLOOP's DUCK (`fx.c duck_block`) with its own depth under `OND_BEAT` (`drums.c ond_beat_pump`; Clipper's slot is
 the reverb TYPE). PUMP 0..127, default 0. YOUR KIT's hook moved after the kick's flag (a kick of yours pumps).
 FM-1 build unchanged, hostsim byte-identical. Next: 6b, the beat's own dusty bus.
+
+## Step 6b (2026-10-31, Ond 0.15): TONE, the beat's filter
+
+The drum track's own SLOOP filter (P_TFLT, fx.c djf) as BEAT's TONE, default OFF. Measured: −50 cuts 24 dB above
+4 kHz, the rest untouched. A DUST of the beat's own is held: it needs dust_process to run twice (a second state),
+a change to Clipper's DUST — Morten first.

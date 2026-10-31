@@ -14,3 +14,15 @@ own motion), −6.8 dB at 60, −15.2 dB at 110.
 
 Listen for: the lo-fi breathing — on the drone especially. Which depth? Should Ond start with some PUMP on when a
 FEEL is picked?
+
+## 6b — TONE: the beat's own filter (Ond 0.15)
+
+SLOOP's per-track filter on the drum track (P_TFLT: below 0 a low-pass closing, above a high-pass; OFF at 0, the
+default). The muffled, far-away drums of lo-fi, the organ untouched.
+
+- `after_chapel_hiphop_tone-lp30.wav`, `after_chapel_hiphop_tone-lp50.wav` (vs `before_chapel_hiphop_pump0.wav`).
+
+Measured on the drums alone: TONE −50 leaves 40 Hz–4 kHz as it was (±0.2 dB) and takes 24 dB off above 4 kHz.
+
+(The beat's own DUST — a second DUST on the drums only — needs Clipper's DUST to run twice; held until Morten
+wants it beyond TONE + the master DUST.)
