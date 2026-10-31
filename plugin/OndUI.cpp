@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cctype>
+#include <chrono>
 #include <string>
 
 typedef struct {                   // (firmware/src/gfx.c: the generated font's shape)
@@ -94,6 +95,9 @@ protected:
         if (index >= vals.size() || vals[index] == value)
             return;
         vals[index] = value;
+        if ((int)index == ond::midiInParam() && !((int)value & 128) && ((int)value & 127) >= ond::NOTE_DRUMS &&
+            ((int)value & 127) < ond::NOTE_DRUMS + 16)
+            drumsInAt = std::chrono::steady_clock::now();   // (BEAT: drums arriving as notes, a clip's)
         if ((int)index == ond::midiInParam() && learnArmed >= 0) {   // LEARN: the pad just hit is this breaker's
             pads.assign(learnArmed, (int)value & 255);
             learnArmed = -1;
@@ -197,6 +201,12 @@ protected:
                     setValue(p, vals[(size_t)p] >= 0.5f ? 0.f : 1.f);
                     touch();
                 }
+            } else if (h.param == -40) {   // STOP: PLAY off, no breaker held, and the plugin lets everything go
+                setValue(ond::playParam(), 0.f);
+                setValue(ond::breakerParam(), 0.f);
+                char n[16];
+                std::snprintf(n, sizeof n, "%u", ++stops);
+                setState("stop", n);
             } else if (h.param == -37) {
                 saveMidi();
             } else if (h.param == -38) {
@@ -715,7 +725,8 @@ private:
         const float db = m > 1e-5f ? 20.f * std::log10(m) : -100.f, k = std::fmax(0.f, std::fmin(1.f, (db + 60.f) / 60.f));
         if (k > 0.f)
             fill(bx + 4.f, by + bh - 3.f, (bw - 8.f) * k, 2.f, db > -6.f ? ACCENT : TEXT, db > -6.f ? 1.f : 0.5f, 1.f);
-        pixelText(24.f, 60.f, "0.23", FAINT);
+        pixelText(24.f, 60.f, "0.24", FAINT);
+        button(66.f, 54.f, 64.f, 22.f, "STOP", false, -40);   // every sound off (and Ond's own PLAY)
         if (renaming)
             pixelText(bx + bw, by + bh + 6.f, "TYPE A NAME, ENTER", FAINT, 1.f, 1);
     }
@@ -943,7 +954,10 @@ private:
         else
             std::snprintf(info, sizeof info, "OFF: PICK A FEEL, OR PRESS NEW");
         pixelText(x0 + 14.f, y0 + 48.f, info, g ? TEXT : DIM, 1.f);
-        if (!savedMidi.empty())                 // (the last SAVE MIDI: where to drag it from)
+        if (std::chrono::steady_clock::now() - drumsInAt < std::chrono::seconds(3))   // a clip playing the kit
+            pixelText(x0 + 14.f, y0 + 72.f, "DRUMS ARRIVING AS MIDI NOTES 16-31 (A CLIP?): FEEL AND BUSY DON'T TOUCH THEM",
+                      ACCENT);
+        else if (!savedMidi.empty())            // (the last SAVE MIDI: where to drag it from)
             pixelText(x0 + 14.f, y0 + 72.f, ("SAVED: BEATS\\" + savedMidi + ".MID - DRAG IT INTO LIVE").c_str(), ACCENT);
         button(x0 + w - 14.f - 120.f, y0 + 40.f, 120.f, 34.f, "NEW", false, -33);
         static const char *const KEYS[] = {"beat_feel", "beat_groove", "beat_busy", "beat_bars", "beat_fill",
@@ -1282,7 +1296,8 @@ private:
     int padDown = -1;                      // the pad held with the mouse
     int hitDown = -1;                      // the hit pad held with the mouse
     std::vector<std::string> hitNames;     // Documents/Ond/Hits: the first eight WAV files
-    unsigned hitsReloads = 0;
+    unsigned hitsReloads = 0, stops = 0;
+    std::chrono::steady_clock::time_point drumsInAt{};   // (BEAT: the last drum note from outside)
     bool kitHas[16] = {};
     std::string savedMidi;                 // the last SAVE MIDI's file name
 

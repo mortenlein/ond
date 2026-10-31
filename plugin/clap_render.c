@@ -96,6 +96,7 @@ int main(int argc, char **argv)
     const char *path = argc > 1 ? argv[1] : "Ond.clap", *out = argc > 2 ? argv[2] : "ond.wav";
     double rate = argc > 3 ? atof(argv[3]) : 48000.0, bpm = 0.0, loop_a = 0.0, loop_b = 0.0, beats = 0.0;
     int second = -1, chord1 = 0;
+    double stop_at = -1.0;                       /* stop=SECONDS: Live's transport stops there (tempo stays) */
     FILE *w2 = NULL;
     clap_event_transport_t tr;
     int sound = argc > 4 ? atoi(argv[4]) : 0, dust = argc > 5 ? atoi(argv[5]) : 0;
@@ -120,6 +121,8 @@ int main(int argc, char **argv)
             second = atoi(argv[a] + 7);
         else if (!strcmp(argv[a], "chord=1"))
             chord1 = 1;
+        else if (!strncmp(argv[a], "stop=", 5))
+            stop_at = atof(argv[a] + 5);
         else if (!strncmp(argv[a], "second_out=", 11) && (w2 = fopen(argv[a] + 11, "wb")))
             fwrite("RIFF....WAVE", 1, 44, w2);   /* (the header's place: written at the end) */
     }
@@ -155,7 +158,8 @@ int main(int argc, char **argv)
                 memset(&tr, 0, sizeof tr);
                 tr.header.size = sizeof tr, tr.header.type = CLAP_EVENT_TRANSPORT;
                 tr.flags = CLAP_TRANSPORT_HAS_TEMPO | CLAP_TRANSPORT_HAS_BEATS_TIMELINE |
-                           CLAP_TRANSPORT_HAS_TIME_SIGNATURE | CLAP_TRANSPORT_IS_PLAYING;
+                           CLAP_TRANSPORT_HAS_TIME_SIGNATURE |
+                           (stop_at < 0.0 || (double)f / rate < stop_at ? CLAP_TRANSPORT_IS_PLAYING : 0);
                 tr.song_pos_beats = (clap_beattime)llround(beats * (double)CLAP_BEATTIME_FACTOR);
                 tr.tempo = bpm;
                 tr.bar_number = (int32_t)(beats / 4.0);
@@ -178,7 +182,7 @@ int main(int argc, char **argv)
                     arg++;
                 }
                 if (!strncmp(arg, "transport=", 10) || !strncmp(arg, "loop=", 5) || !strncmp(arg, "midiout=", 8) ||
-                    !strncmp(arg, "second", 6) || !strncmp(arg, "chord=", 6))
+                    !strncmp(arg, "second", 6) || !strncmp(arg, "chord=", 6) || !strncmp(arg, "stop=", 5))
                     continue;
                 if ((arg[0] == '1' || arg[0] == '2') && arg[1] == ':') {   /* one instance's only */
                     if ((uint32_t)(arg[0] - '1') != c)

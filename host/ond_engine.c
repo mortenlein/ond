@@ -340,7 +340,8 @@ void ond_play(int on)                           /* Ond's own transport, the host
 
 void ond_drum(int lane, int velocity)
 {
-    if (lane >= 0 && lane < DRUM_LANES && velocity > 0)
+    if (lane >= 0 && lane < DRUM_LANES && velocity > 0 && !((beat_out_lanes >> lane) & 1u))   /* (0.23: a part out
+                                                 * mutes it from a clip too) */
         trk_note_on(TDRUM, LANE_NOTE[lane], (uint32_t)(velocity > 127 ? 127 : velocity));
 }
 

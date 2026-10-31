@@ -35,7 +35,7 @@ std::atomic<void *> gOwner{nullptr};
 class OndPlugin : public Plugin {
 public:
     OndPlugin()
-        : Plugin((uint32_t)ond::paramCount(), 0, 3),
+        : Plugin((uint32_t)ond::paramCount(), 0, 4),
           values(new std::atomic<float>[(size_t)ond::paramCount()]),
           dirty(new std::atomic<bool>[(size_t)ond::paramCount()]),
           touched(new std::atomic<bool>[(size_t)ond::paramCount()])
@@ -80,16 +80,16 @@ protected:
     const char *getMaker() const override { return "Morten Lein"; }
     const char *getHomePage() const override { return "https://github.com/mortenlein/ond"; }
     const char *getLicense() const override { return "GPL-3.0-only"; }
-    uint32_t getVersion() const override { return d_version(0, 23, 0); }
+    uint32_t getVersion() const override { return d_version(0, 24, 0); }
 
     // "preset": the player's preset loaded on the screen (its name; "" a factory sound), kept with the Live set
     // so the screen shows it again. The sound itself is in the parameters.
     // "pads": Brudd's pads learned on the screen (OndShared.hpp PadMap), kept with the set too
     void initState(uint32_t index, State &state) override
     {
-        state.key = index == 0 ? "preset" : index == 1 ? "pads" : "hits";   // ("hits": reload the folder)
-        state.defaultValue = "";
-        state.label = index == 0 ? "Preset" : index == 1 ? "Pads" : "Hits";
+        state.key = index == 0 ? "preset" : index == 1 ? "pads" : index == 2 ? "hits" : "stop";   // ("hits": reload
+        state.defaultValue = "";                                                   // the folder; "stop": STOP)
+        state.label = index == 0 ? "Preset" : index == 1 ? "Pads" : index == 2 ? "Hits" : "Stop";
         state.hints = 0;
     }
     String getState(const char *key) const override
@@ -104,6 +104,8 @@ protected:
             setPads(ond::PadMap::parse(value));
         else if (!std::strcmp(key, "hits") && value[0])
             loadHits();
+        else if (!std::strcmp(key, "stop") && value[0])
+            stopWanted = true;                  // (the screen's STOP: at the next run)
     }
 
     void initParameter(uint32_t index, Parameter &p) override
@@ -298,6 +300,8 @@ protected:
 #ifdef __EMSCRIPTEN__
         webIn();
 #endif
+        if (stopWanted.exchange(false))
+            stopAll();
         blockStart = frameNow;
         uint32_t done = 0, e = 0;
         while (done < frames) {
@@ -455,15 +459,8 @@ private:
         while (webTail != webHead) {
             const uint32_t m = webQ[webTail++ & 255u];
             const uint8_t st = m & 255u, d1 = (m >> 8) & 255u, d2 = (m >> 16) & 255u;
-            if (st == 0xF3u) {                  // STOP: every sound (notes, held drones, breakers) off, now
-                eng.all_notes_off();
-                padsHeld = 0;
-                for (auto &w : held)
-                    w = 0;
-                droneNow[0] = droneNow[1] = -1;
-                landLeft = -1;
-                breakerNow = -1;
-                eng.breaker(-1);
+            if (st == 0xF3u) {                  // STOP: every sound off, now
+                stopAll();
             } else if (st == 0xF1u || st == 0xF2u) {
                 if (d1 < ond::NBREAK)
                     padPress(d1, st == 0xF1u);
@@ -473,6 +470,18 @@ private:
         }
     }
 #endif
+
+    void stopAll()                              // STOP: every sound (notes, held drones, breakers) off, now
+    {
+        eng.all_notes_off();
+        padsHeld = 0;
+        for (auto &w : held)
+            w = 0;
+        droneNow[0] = droneNow[1] = -1;
+        landLeft = -1;
+        breakerNow = -1;
+        eng.breaker(-1);
+    }
 
     void updateBreaker()                        // the pads first, else the parameter (the screen, automation)
     {
@@ -773,6 +782,7 @@ private:
     uint32_t blockPos = OND_BLOCK;
     float meter = 0.f;
     int padStack[ond::NBREAK] = {}, padsHeld = 0, breakerNow = -1, midiSeen = 0;
+    std::atomic<bool> stopWanted{false};
     int64_t frameNow = 0, blockStart = 0, pressedAt = 0, landLeft = -1;   // (LAND: output frames)
     uint32_t outFrame = 0;                       // (the frame being made: BEAT's MIDI out's time)
     int32_t offLeft[16] = {};                    // (frames to each drum note's off)
