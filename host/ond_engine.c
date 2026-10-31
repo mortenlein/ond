@@ -357,11 +357,12 @@ static const char *const N_LAND[] = {"OFF", "1/16", "1/8", "1/4"};
 /* BEAT (task 015): FEEL (OFF, or a style of the drummers': ond_grooves.h), GROOVE (which of that style's), DRUNK (how
  * much of the drummer's own timing: 0 on the grid, 100 as played, more looser still), KIT (the drum track's: SLOOP's
  * synthesised kits; DRUM_KIT_NAMES), LEVEL (its own: drums.c DR_LVL) */
-static const char *const N_FEEL[OND_NFEELS + 1] = {"OFF", "HIPHP", "FUNK", "SOUL", "JAZZ"};   /* (5 characters: the
-                                                 * FM-1's value text) */
-_Static_assert(OND_NFEELS == 4, "N_FEEL: OND_FEEL_NAMES (tools/gen_grooves.py FEELS)");
+static const char *const N_FEEL[OND_NFEELS + 1] = {"OFF", "HIPHP", "FUNK", "SOUL", "JAZZ",
+                                                    "ROCK", "POP", "LATIN", "AFRO", "REGGE"};   /* (5 characters: the
+                                                 * FM-1's value text; 0.22: ROCK .. REGGAE after the first four) */
+_Static_assert(OND_NFEELS == 9, "N_FEEL: OND_FEEL_NAMES (tools/gen_grooves.py FEELS)");
 static const param_desc_t FEEL_D = {"FEEL", F_ENUM, 0, OND_NFEELS, 0, N_FEEL, 0};
-static const param_desc_t GROOVE_D = {"GROOV", F_INT, 1, 32, 1, 0, 0};
+static const param_desc_t GROOVE_D = {"GROOV", F_INT, 1, 64, 1, 0, 0};   /* (0.22: 64, gen_grooves.py MAX_GROOVES) */
 static const param_desc_t DRUNK_D = {"DRUNK", F_INT, 0, 200, 100, 0, "%"};
 /* BARS: 2 (the two that loop best) or 8 (the drummer going on: each bar a little different, theirs); FILL: the
  * drummer's fill bar every 4 or 8 bars, the last of each */
