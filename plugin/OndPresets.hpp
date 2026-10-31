@@ -31,6 +31,11 @@ std::vector<std::string> listHits();       // their names (without .wav)
 // a hit, read and brought to 44.1 kHz (the engine's rate), up to 20 s; false: not a WAV this reads
 bool loadHit(const std::string &name, std::vector<float> &l, std::vector<float> &r);
 void openHitsFolder();
+// YOUR KIT: Documents/Ond/Kit/<lane>.wav, the lanes' names: kick kick2 snare clap hat open pedal rim snare2 tomlo
+// tomhi crash ride shaker conga cowbell (BEAT's 16 lanes, in order)
+extern const char *const KIT_FILES[16];
+bool loadKitLane(int lane, std::vector<float> &l, std::vector<float> &r);   // false: no file (or not a WAV)
+void openKitFolder();
 
 // the pads learned for Brudd, for every Live set: Documents/Ond/pads.txt (OndShared.hpp PadMap's text)
 std::string loadPadsText();

@@ -260,6 +260,10 @@ static void drum_on(uint32_t note, uint32_t vel)
     voice_t *v = &drums.v[0];
     uint32_t i, zi = 0xFFFFu, kit = drum_kit();
     int32_t zid = -1;
+#if OND_BEAT
+    if (ond_kit_hit(lane_of_note(note), vel))
+        return;                                     /* (Ond: the player's own recording for this lane) */
+#endif
     if (note != 76u && note != 77u)                 /* the pads and key LEDs (not the click's wood block) */
         drums.hits |= (uint16_t)(1u << lane_of_note(note));
     if (note == 35u || note == 36u)

@@ -34,6 +34,7 @@ static int cpu1_run(cpu1_job_t fn, uint32_t arg) { (void)fn; (void)arg; return 0
 static int cpu1_wait(void) { return 0; }
 static uint32_t cpu1_ticks(void) { return 0; }
 #include "../firmware/src/engines.c"
+static int ond_kit_hit(uint32_t lane, uint32_t vel);   /* (drums.c drum_on: YOUR KIT, below) */
 #include "../firmware/src/drums.c"
 #include "../firmware/src/params.c"
 #include "../firmware/src/voice.c"
@@ -50,16 +51,18 @@ static void ond_beat_out(uint32_t lane, uint32_t vel)
         beat_nev++;
     }
 }
-/* ---- Brudd's hits (ond_engine.h): per slot the voice playing and the one fading out under a retrigger */
+/* ---- Brudd's hits (ond_engine.h) and YOUR KIT's lanes: one-shot slots (0..7 the hits, 8..23 the kit's 16 lanes);
+ * per slot the voice playing and the one fading out under a retrigger */
+#define OND_NSLOT (OND_NHITS + 16)
 static struct {
     const float *l, *r;
     uint32_t len;
     struct { uint32_t pos; int32_t g, fade; } v[2];   /* g: Q15 gain; fade: samples left of a 64-sample fade, -1 none */
-} hits[OND_NHITS];
+} hits[OND_NSLOT];
 static void ond_hits_mix(int32_t *ml, int32_t *mr, uint32_t n)
 {
     uint32_t s, k, i;
-    for (s = 0; s < OND_NHITS; s++) {
+    for (s = 0; s < OND_NSLOT; s++) {
         if (!hits[s].l)
             continue;
         for (k = 0; k < 2u; k++) {
@@ -596,6 +599,43 @@ int ond_breaker_playing(void) { return punch.cur; }
 void ond_breaker_catch(int ms) { punch_catch = ms > 0 ? (uint32_t)(ms > 2000 ? 2000 : ms) * (uint32_t)FS / 1000u : 0u; }
 double ond_tempo(void) { return (double)song.g[G_BPM]; }
 
+static void slot_play(uint32_t s, int32_t g)    /* a one-shot from the top, the last one fading out under it */
+{
+    hits[s].v[1] = hits[s].v[0];
+    if (hits[s].v[1].pos < hits[s].len)
+        hits[s].v[1].fade = 64;
+    hits[s].v[0].pos = 0;
+    hits[s].v[0].g = g;
+    hits[s].v[0].fade = -1;
+}
+static void slot_choke(uint32_t s)              /* (the open hat under a closed or pedal one: out in 64 samples) */
+{
+    uint32_t k;
+    for (k = 0; k < 2u; k++)
+        if (hits[s].v[k].pos < hits[s].len && hits[s].v[k].fade < 0)
+            hits[s].v[k].fade = 64;
+}
+static int ond_kit_hit(uint32_t lane, uint32_t vel)
+{
+    uint32_t s = OND_NHITS + (lane & 15u);
+    if (lane == 4u || lane == 6u)               /* a closed or pedal hat chokes the open one (as drums.c's) */
+        slot_choke(OND_NHITS + 5u);
+    if (!hits[s].l)
+        return 0;                               /* (no recording: the kit's own sound) */
+    slot_play(s, (int32_t)(vel > 127u ? 127u : vel) * (int32_t)(vel > 127u ? 127u : vel) * 2 * DR_LVL / 100);
+    return 1;
+}
+void ond_kit_set(int lane, const float *l, const float *r, uint32_t frames)
+{
+    uint32_t s = OND_NHITS + (uint32_t)(lane & 15);
+    if (lane < 0 || lane > 15)
+        return;
+    hits[s].l = l;
+    hits[s].r = r ? r : l;
+    hits[s].len = l ? frames : 0u;
+    hits[s].v[0].pos = hits[s].v[1].pos = hits[s].len;
+}
+
 void ond_hit_set(int slot, const float *l, const float *r, uint32_t frames)
 {
     if (slot < 0 || slot >= OND_NHITS)
@@ -611,12 +651,7 @@ void ond_hit(int slot, int velocity)
     int32_t v = velocity < 0 ? 0 : velocity > 127 ? 127 : velocity;
     if (slot < 0 || slot >= OND_NHITS || !hits[slot].l || !v)
         return;
-    hits[slot].v[1] = hits[slot].v[0];                  /* the last one fades out under the new one */
-    if (hits[slot].v[1].pos < hits[slot].len)
-        hits[slot].v[1].fade = 64;
-    hits[slot].v[0].pos = 0;
-    hits[slot].v[0].g = v * v * 2;                      /* (127: 32258, Q15) */
-    hits[slot].v[0].fade = -1;
+    slot_play((uint32_t)slot, v * v * 2);               /* (127: 32258, Q15) */
 }
 
 void ond_render(float *l, float *r, uint32_t n)

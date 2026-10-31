@@ -59,6 +59,13 @@ Ond, and does recording put notes 16–31 in the clip? If not, tell Claude what 
 BEAT's PLAY (in its view) runs the beat with Live stopped, on Ond's own time at Live's tempo; Live's play always
 takes over. The status line says which.
 
+## Your own drum sounds in BEAT (Ond 0.13)
+
+Put WAV files in `Documents\Ond\Kit` named after the lanes: `kick.wav`, `kick2.wav`, `snare.wav`, `clap.wav`,
+`hat.wav`, `open.wav`, `pedal.wav`, `rim.wav`, `snare2.wav`, `tomlo.wav`, `tomhi.wav`, `crash.wav`, `ride.wav`,
+`shaker.wav`, `conga.wav`, `cowbell.wav`. Each one you add replaces that lane's sound; the rest stay the KIT
+chosen. KIT FOLDER opens the folder, RELOAD picks up changes.
+
 ## Recording a take
 
 1. Ond's track: input **All Ins** (the Roland and the MPK both), monitor **In** or armed.

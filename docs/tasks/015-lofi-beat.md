@@ -107,3 +107,12 @@ KICK, SNARE (snare, clap, snare 2), RIM, HATS (closed, open, pedal), CYMBALS (cr
 conga, cowbell): each a parameter (Live can automate it), IN by default, a row of switches in the BEAT view. A part
 out leaves its lanes empty from the next step (both bars written again); MIDI out sends only what plays. Checked
 through the plugin's MIDI out: HATS out removes the 45 hats and nothing else; out at 4 s, back at 8 s.
+
+## Step 5 (2026-10-31, Ond 0.13): YOUR KIT
+
+`Documents\Ond\Kit\<lane>.wav` (kick kick2 snare clap hat open pedal rim snare2 tomlo tomhi crash ride shaker
+conga cowbell; any case): a lane with a file plays the recording (at BEAT's level, velocity squared, through DUST
+and the breakers), the others the chosen SLOOP kit. A closed or pedal hat chokes the open one (as drums.c). The
+hook: drums.c `drum_on` under `OND_BEAT` (the FM-1 build unchanged). KIT FOLDER and RELOAD in the BEAT view.
+Checked: a kick and a snare of the CC0 kit in the folder replace those lanes; the hats left are the kit's, to the
+sample.

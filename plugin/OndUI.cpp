@@ -83,6 +83,7 @@ public:
         mine = ond::listPresets();
         pads = ond::PadMap::parse(ond::loadPadsText().c_str());
         hitNames = ond::listHits();
+        scanKit();
     }
 
 protected:
@@ -190,6 +191,14 @@ protected:
                     setValue(p, vals[(size_t)p] >= 0.5f ? 0.f : 1.f);
                     touch();
                 }
+            } else if (h.param == -35) {
+                ond::openKitFolder();
+            } else if (h.param == -36) {
+                scanKit();
+                hitNames = ond::listHits();
+                char n[16];
+                std::snprintf(n, sizeof n, "%u", ++hitsReloads);
+                setState("hits", n);                 // (the plugin reads the hits and the kit again)
             } else if (h.param == -34) {
                 setValue(ond::playParam(), vals[(size_t)ond::playParam()] >= 0.5f ? 0.f : 1.f);
             } else if (h.param == -22 || h.param == -24 || h.param == -32) {
@@ -409,6 +418,14 @@ private:
             if (c == note)
                 return true;
         return false;
+    }
+
+    void scanKit()                         // which lanes have a recording of yours
+    {
+        for (int k = 0; k < 16; ++k) {
+            std::vector<float> l, r;
+            kitHas[k] = ond::loadKitLane(k, l, r);
+        }
     }
 
     void storePads()                       // to the plugin (the set keeps it) and for every set
@@ -687,7 +704,7 @@ private:
         const float db = m > 1e-5f ? 20.f * std::log10(m) : -100.f, k = std::fmax(0.f, std::fmin(1.f, (db + 60.f) / 60.f));
         if (k > 0.f)
             fill(bx + 4.f, by + bh - 3.f, (bw - 8.f) * k, 2.f, db > -6.f ? ACCENT : TEXT, db > -6.f ? 1.f : 0.5f, 1.f);
-        pixelText(24.f, 60.f, "0.12", FAINT);
+        pixelText(24.f, 60.f, "0.13", FAINT);
         if (renaming)
             pixelText(bx + bw, by + bh + 6.f, "TYPE A NAME, ENTER", FAINT, 1.f, 1);
     }
@@ -900,6 +917,16 @@ private:
             const float cx = x0 + 14.f + cw * ((float)i + 0.5f);
             drawKnob(p, cx, cy, 30.f);
             hits.push_back({cx - cw / 2.f, cy - 70.f, cw, 140.f, p});
+        }
+        {   // YOUR KIT: the lanes with a recording of yours in Documents/Ond/Kit
+            std::string mine;
+            for (int k = 0; k < 16; ++k)
+                if (kitHas[k])
+                    mine += (mine.empty() ? "" : " ") + std::string(ond::KIT_FILES[k]);
+            pixelText(x0 + 14.f, y0 + h - 70.f, mine.empty() ? "YOUR KIT: NONE YET (KICK.WAV, SNARE.WAV, HAT.WAV ... IN THE KIT FOLDER)"
+                                                            : ("YOUR KIT: " + mine).c_str(), mine.empty() ? FAINT : TEXT);
+            button(x0 + w - 14.f - 250.f, y0 + h - 78.f, 120.f, 28.f, "KIT FOLDER", false, -35);
+            button(x0 + w - 14.f - 120.f, y0 + h - 78.f, 120.f, 28.f, "RELOAD", false, -36);
         }
         pixelText(x0 + 14.f, y0 + h - 44.f, "OUT AS MIDI NOTES 16-31: RECORD THEM ON A TRACK, 'MIDI FROM: OND'. A CLIP'S 16-31 PLAY THE KIT.", FAINT);
         pixelText(x0 + 14.f, y0 + h - 26.f, "GROOVE MIDI DATASET (GOOGLE MAGENTA, CC BY 4.0). KITS: SLOOP'S.", FAINT);
@@ -1154,6 +1181,7 @@ private:
     int hitDown = -1;                      // the hit pad held with the mouse
     std::vector<std::string> hitNames;     // Documents/Ond/Hits: the first eight WAV files
     unsigned hitsReloads = 0;
+    bool kitHas[16] = {};
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OndUI)
 };

@@ -52,7 +52,7 @@ protected:
     const char *getMaker() const override { return "Morten Lein"; }
     const char *getHomePage() const override { return "https://github.com/mortenlein/ond"; }
     const char *getLicense() const override { return "GPL-3.0-only"; }
-    uint32_t getVersion() const override { return d_version(0, 12, 0); }
+    uint32_t getVersion() const override { return d_version(0, 13, 0); }
 
     // "preset": the player's preset loaded on the screen (its name; "" a factory sound), kept with the Live set
     // so the screen shows it again. The sound itself is in the parameters.
@@ -205,10 +205,14 @@ protected:
             dirty[i] = touched[i].load();
         resampler.setup(OND_FS, getSampleRate());
         blockPos = OND_BLOCK;
-        if (hitsLive)                           // (ond_init left the engine's hits: give them back)
+        if (hitsLive) {                         // (ond_init left the engine's hits: give them back)
             for (int s = 0; s < OND_NHITS; ++s)
                 ond_hit_set(s, hitsLive->l[s].empty() ? nullptr : hitsLive->l[s].data(), hitsLive->r[s].data(),
                             (uint32_t)hitsLive->l[s].size());
+            for (int k = 0; k < 16; ++k)
+                ond_kit_set(k, hitsLive->kl[k].empty() ? nullptr : hitsLive->kl[k].data(), hitsLive->kr[k].data(),
+                            (uint32_t)hitsLive->kl[k].size());
+        }
         hitNow = 0;
         meter = 0.f;
         padsHeld = 0;
@@ -442,6 +446,7 @@ private:
     // set freed here at the next reload (never on the audio thread)
     struct HitBank {
         std::vector<float> l[OND_NHITS], r[OND_NHITS];
+        std::vector<float> kl[16], kr[16];       // YOUR KIT's lanes (Documents/Ond/Kit)
     };
     void loadHits()
     {
@@ -449,6 +454,8 @@ private:
         const auto names = ond::listHits();
         for (size_t s = 0; s < names.size() && s < (size_t)OND_NHITS; ++s)
             ond::loadHit(names[s], b->l[s], b->r[s]);
+        for (int k = 0; k < 16; ++k)
+            ond::loadKitLane(k, b->kl[k], b->kr[k]);
         delete hitsRetired.exchange(nullptr);
         delete hitsPending.exchange(b);         // (one the audio never took: never heard, freed)
     }
@@ -459,6 +466,8 @@ private:
             return;
         for (int s = 0; s < OND_NHITS; ++s)
             ond_hit_set(s, b->l[s].empty() ? nullptr : b->l[s].data(), b->r[s].data(), (uint32_t)b->l[s].size());
+        for (int k = 0; k < 16; ++k)
+            ond_kit_set(k, b->kl[k].empty() ? nullptr : b->kl[k].data(), b->kr[k].data(), (uint32_t)b->kl[k].size());
         delete hitsRetired.exchange(hitsLive);  // (a set retired twice before a reload: the older freed here, rare)
         hitsLive = b;
     }

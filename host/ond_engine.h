@@ -78,6 +78,9 @@ double ond_tempo(void);                  /* the tempo the engine runs at (the ho
  * key's), a slot playing again fades its last out over 64 samples */
 #define OND_NHITS 8
 void ond_hit_set(int slot, const float *l, const float *r, uint32_t frames);
+/* YOUR KIT: the player's recording for one of BEAT's 16 lanes (as ond_hit_set: the host's samples, OND_FS); a lane
+ * with one plays it (at BEAT's level), the others the chosen kit's sound; NULL gives the lane back to the kit */
+void ond_kit_set(int lane, const float *l, const float *r, uint32_t frames);
 void ond_hit(int slot, int velocity);
 
 /* n frames (a multiple of OND_BLOCK) of stereo at OND_FS, -1..1 */

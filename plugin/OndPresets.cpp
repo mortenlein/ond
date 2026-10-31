@@ -196,10 +196,16 @@ std::vector<std::string> listHits()
     return names;
 }
 
-// RIFF WAVE: PCM 16 / 24 / 32-bit or float 32 (WAVE_FORMAT_EXTENSIBLE too), the first two channels
+bool readWav(const fs::path &path, std::vector<float> &l, std::vector<float> &r);
 bool loadHit(const std::string &name, std::vector<float> &l, std::vector<float> &r)
 {
-    std::ifstream f(hitsDir() / fs::u8path(name + ".wav"), std::ios::binary);
+    return readWav(hitsDir() / fs::u8path(name + ".wav"), l, r);
+}
+
+// RIFF WAVE: PCM 16 / 24 / 32-bit or float 32 (WAVE_FORMAT_EXTENSIBLE too), the first two channels
+bool readWav(const fs::path &path, std::vector<float> &l, std::vector<float> &r)
+{
+    std::ifstream f(path, std::ios::binary);
     std::vector<unsigned char> d((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     auto u16 = [&](size_t i) { return (unsigned)d[i] | (unsigned)d[i + 1] << 8; };
     auto u32 = [&](size_t i) { return u16(i) | (unsigned)u16(i + 2) << 16; };
@@ -254,6 +260,35 @@ bool loadHit(const std::string &name, std::vector<float> &l, std::vector<float> 
         l.push_back(a), r.push_back(b);
     }
     return true;
+}
+
+const char *const KIT_FILES[16] = {"kick", "kick2", "snare", "clap", "hat", "open", "pedal", "rim",
+                                   "snare2", "tomlo", "tomhi", "crash", "ride", "shaker", "conga", "cowbell"};
+
+fs::path kitDir()
+{
+    fs::path d = presetDir().parent_path() / "Kit";
+    std::error_code ec;
+    fs::create_directories(d, ec);
+    return d;
+}
+
+bool loadKitLane(int lane, std::vector<float> &l, std::vector<float> &r)
+{
+    std::error_code ec;
+    if (lane < 0 || lane > 15)
+        return false;
+    for (const auto &e : fs::directory_iterator(kitDir(), ec))   // (any case: Kick.WAV too)
+        if (lower(e.path().extension().u8string()) == ".wav" && lower(e.path().stem().u8string()) == KIT_FILES[lane])
+            return readWav(e.path(), l, r);
+    return false;
+}
+
+void openKitFolder()
+{
+#ifdef _WIN32
+    ShellExecuteW(nullptr, L"open", kitDir().wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+#endif
 }
 
 void openHitsFolder()
