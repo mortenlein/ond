@@ -681,7 +681,7 @@ private:
         const float db = m > 1e-5f ? 20.f * std::log10(m) : -100.f, k = std::fmax(0.f, std::fmin(1.f, (db + 60.f) / 60.f));
         if (k > 0.f)
             fill(bx + 4.f, by + bh - 3.f, (bw - 8.f) * k, 2.f, db > -6.f ? ACCENT : TEXT, db > -6.f ? 1.f : 0.5f, 1.f);
-        pixelText(24.f, 60.f, "0.10", FAINT);
+        pixelText(24.f, 60.f, "0.11", FAINT);
         if (renaming)
             pixelText(bx + bw, by + bh + 6.f, "TYPE A NAME, ENTER", FAINT, 1.f, 1);
     }
@@ -865,14 +865,16 @@ private:
         const ond_groove_t *g = grooveNow();
         char info[96];
         if (g)
-            std::snprintf(info, sizeof info, "DRUMMER %u, %u BPM (%s)", (unsigned)g->drummer, (unsigned)g->bpm, g->style);
+            std::snprintf(info, sizeof info, "DRUMMER %u, %u BPM (%s), %u BARS OF THEIR PLAYING", (unsigned)g->drummer,
+                          (unsigned)g->bpm, g->style, (unsigned)g->nbars);
         else
             std::snprintf(info, sizeof info, "OFF: PICK A FEEL, OR PRESS NEW");
         pixelText(x0 + 14.f, y0 + 48.f, info, g ? TEXT : DIM, 1.f);
         button(x0 + w - 14.f - 120.f, y0 + 40.f, 120.f, 34.f, "NEW", false, -33);
-        static const char *const KEYS[] = {"beat_feel", "beat_groove", "beat_drunk", "beat_kit", "beat_level"};
-        const float cw = (w - 28.f) / 5.f, cy = y0 + 220.f;
-        for (int i = 0; i < 5; ++i) {
+        static const char *const KEYS[] = {"beat_feel", "beat_groove", "beat_bars", "beat_fill", "beat_drunk",
+                                           "beat_kit", "beat_level"};
+        const float cw = (w - 28.f) / 7.f, cy = y0 + 220.f;
+        for (int i = 0; i < 7; ++i) {
             const int p = ond::paramOfKey(KEYS[i]);
             if (p < 0)
                 continue;

@@ -144,20 +144,57 @@ static void layer_into(uint32_t e, uint32_t pi)
         trk[1].p[LAYER_OWN[i]] = keep[i];
 }
 
-/* BEAT's pattern into the drum track: OFF (empty), or a drummer's two bars (ond_grooves.h): FEEL picks the style,
- * GROOVE which of its grooves (round its count), DRUNK how much of the drummer's timing (each step's nudge, scaled) */
+/* BEAT's pattern: OFF (empty), or a drummer's playing (ond_grooves.h): FEEL picks the style, GROOVE which of its
+ * grooves (round its count), DRUNK how much of the drummer's timing (each step's nudge, scaled), BARS 2 or the
+ * drummer's 8, FILL the fill bar every 4 / 8. The drum track holds two bars (32 steps): the bar playing and the next;
+ * beat_schedule writes the next bar into the half not playing, a bar ahead (a step nudged early into the next bar
+ * finds it written) */
 static void beat_init(void);
-static void beat_pattern(int feel, int groove, int drunk)
+static const ond_groove_t *beat_g;              /* the groove (0: off) */
+static int32_t beat_drunk_now = 100, beat_nbars = 2, beat_fill_every;
+static int32_t beat_half[2] = {-1, -1};         /* the bar each half holds */
+static void beat_write(uint32_t half, int32_t bar)
+{
+    track_t *t = TDRUM;
+    const ond_gstep_t *src;
+    uint32_t i, l;
+    if (beat_half[half] == bar)
+        return;
+    beat_half[half] = bar;
+    src = beat_fill_every && beat_g->has_fill && bar % beat_fill_every == beat_fill_every - 1
+              ? beat_g->fill : beat_g->s + 16 * (bar % beat_nbars);
+    for (i = 0; i < 16u; i++) {
+        uint32_t k = half * 16u + i;
+        int32_t m = (src[i].micro * beat_drunk_now + (src[i].micro >= 0 ? 50 : -50)) / 100;
+        memset(&t->dstep[k], 0, sizeof t->dstep[k]);
+        for (l = 0; l < DRUM_LANES; l++)
+            if ((src[i].on >> l) & 1u)
+                dstep_set(&t->dstep[k], l, (src[i].lvl >> (2u * l)) & 3u, 0);
+        t->micro[k] = (int8_t)(m < MICRO_MIN ? MICRO_MIN : m > MICRO_MAX ? MICRO_MAX : m);
+    }
+}
+static void beat_schedule(void)                 /* each block, before the sequencer: this bar and the next in place */
+{
+    int32_t bar = 0;
+    if (!beat_g)
+        return;
+    if (song.playing)
+        bar = (int32_t)((clk_beat * 4u + clk_pos / (BEAT_U / 4u)) / 16u);
+    beat_write((uint32_t)bar & 1u, bar);
+    beat_write((uint32_t)(bar + 1) & 1u, bar + 1);
+}
+static void beat_pattern(int feel, int groove, int drunk, int bars, int fill)
 {
     track_t *t = TDRUM;
     uint32_t i, n = 0, k;
-    const ond_groove_t *g = 0;
     for (i = 0; i < NSTEP; i++) {
         memset(&t->dstep[i], 0, sizeof t->dstep[i]);
         t->micro[i] = 0;
     }
-    t->p[P_SLEN] = 32;                          /* two bars of 1/16 */
+    t->p[P_SLEN] = 32;                          /* two bars of 1/16: the one playing, the next */
     t->p[P_SDIV] = 2;
+    beat_g = 0;
+    beat_half[0] = beat_half[1] = -1;
     if (feel < 1 || feel > OND_NFEELS)
         return;
     for (i = 0; i < OND_NGROOVES; i++)
@@ -165,17 +202,13 @@ static void beat_pattern(int feel, int groove, int drunk)
     if (!n)
         return;
     k = (uint32_t)(groove > 0 ? groove - 1 : 0) % n;
-    for (i = 0; i < OND_NGROOVES && !g; i++)
+    for (i = 0; i < OND_NGROOVES && !beat_g; i++)
         if (OND_GROOVES[i].feel == (uint32_t)(feel - 1) && !k--)
-            g = &OND_GROOVES[i];
-    for (i = 0; i < 32u; i++) {
-        uint32_t l;
-        int32_t m = (g->s[i].micro * drunk + (g->s[i].micro >= 0 ? 50 : -50)) / 100;
-        for (l = 0; l < DRUM_LANES; l++)
-            if ((g->s[i].on >> l) & 1u)
-                dstep_set(&t->dstep[i], l, (g->s[i].lvl >> (2u * l)) & 3u, 0);
-        t->micro[i] = (int8_t)(m < MICRO_MIN ? MICRO_MIN : m > MICRO_MAX ? MICRO_MAX : m);
-    }
+            beat_g = &OND_GROOVES[i];
+    beat_drunk_now = drunk;
+    beat_nbars = bars ? beat_g->nbars : 2;
+    beat_fill_every = fill == 1 ? 4 : fill == 2 ? 8 : 0;
+    beat_schedule();
 }
 
 void ond_init(void)
@@ -319,13 +352,20 @@ _Static_assert(OND_NFEELS == 4, "N_FEEL: OND_FEEL_NAMES (tools/gen_grooves.py FE
 static const param_desc_t FEEL_D = {"FEEL", F_ENUM, 0, OND_NFEELS, 0, N_FEEL, 0};
 static const param_desc_t GROOVE_D = {"GROOV", F_INT, 1, 32, 1, 0, 0};
 static const param_desc_t DRUNK_D = {"DRUNK", F_INT, 0, 200, 100, 0, "%"};
+/* BARS: 2 (the two that loop best) or 8 (the drummer going on: each bar a little different, theirs); FILL: the
+ * drummer's fill bar every 4 or 8 bars, the last of each */
+static const char *const N_BARS[] = {"2", "8"};
+static const char *const N_FILL[] = {"OFF", "4", "8"};
+static const param_desc_t BARS_D = {"BARS", F_ENUM, 0, 1, 1, N_BARS, 0};
+static const param_desc_t FILL_D = {"FILL", F_ENUM, 0, 2, 2, N_FILL, 0};
 static const param_desc_t KIT_D = {"KIT", F_ENUM, DRUM_SAMPLED, DRUM_SAMPLED + DS_NKITS - 1, DRUM_SAMPLED + 8,
                                    DRUM_KIT_NAMES + DRUM_SAMPLED, 0};   /* (param_format: names from the minimum) */   /* (the 32 synthesised kits; LO-FI first) */
 static const param_desc_t BLVL_D = {"LEVEL", F_PCT, 0, 127, 100, 0, 0};
 static const param_desc_t CATCH_D = {"CATCH", F_INT, 0, 1000, 0, 0, "ms"};
 static const param_desc_t LAND_D = {"LAND", F_ENUM, 0, 3, 0, N_LAND, 0};
-static int16_t host_val[8];                    /* CATCH, LAND, FEEL, (beat LEVEL: drums.c's own), -, GROOVE, DRUNK */
-static void beat_load(void) { beat_pattern(host_val[2], host_val[5], host_val[6]); }
+static int16_t host_val[10];                   /* CATCH, LAND, FEEL, (beat LEVEL: drums.c's own), -, GROOVE, DRUNK,
+                                                * BARS, FILL */
+static void beat_load(void) { beat_pattern(host_val[2], host_val[5], host_val[6], host_val[7], host_val[8]); }
 static void beat_init(void)
 {
     TDRUM->p[P_E0] = (int16_t)KIT_D.def;
@@ -334,6 +374,8 @@ static void beat_init(void)
     host_val[3] = 100;
     host_val[5] = 1;
     host_val[6] = 100;
+    host_val[7] = BARS_D.def;
+    host_val[8] = FILL_D.def;
     beat_load();
 }
 static const ctl_t CTL_TAB[] = {
@@ -396,6 +438,8 @@ static const ctl_t CTL_TAB[] = {
     {"beat_level", "BEAT", OND_SCOPE_HOST, 3, 1, &BLVL_D},
     {"beat_groove", "BEAT", OND_SCOPE_HOST, 5, 1, &GROOVE_D},
     {"beat_drunk", "BEAT", OND_SCOPE_HOST, 6, 1, &DRUNK_D},
+    {"beat_bars", "BEAT", OND_SCOPE_HOST, 7, 1, &BARS_D},                /* (Ond 0.11) */
+    {"beat_fill", "BEAT", OND_SCOPE_HOST, 8, 1, &FILL_D},
 };
 
 static const param_desc_t *ctl_desc(int c, int engine)
@@ -446,8 +490,8 @@ void ond_control_set(int c, int v)
         host_val[k->id] = (int16_t)v;
         if (k->id == 0)
             ond_breaker_catch(v);
-        if (k->id == 2 || k->id == 5 || k->id == 6)
-            beat_load();                        /* FEEL, GROOVE, DRUNK: the pattern again */
+        if (k->id == 2 || k->id == 5 || k->id == 6 || k->id == 7 || k->id == 8)
+            beat_load();                        /* FEEL, GROOVE, DRUNK, BARS, FILL: the pattern again */
         if (k->id == 3)
             ond_beat_lvl = (int16_t)v;
     } else
@@ -538,6 +582,7 @@ void ond_render(float *l, float *r, uint32_t n)
     uint32_t f, i;
     for (f = 0; f + CTL <= n; f += CTL) {
         wt_service();                           /* the main loop's WAVE service before each block (main.c) */
+        beat_schedule();                        /* (BEAT: the next bar written ahead) */
         mix_block(o, CTL);
         for (i = 0; i < CTL; i++) {
             int32_t a = o[2 * i], b = o[2 * i + 1];

@@ -90,4 +90,13 @@ are the master EQ). Controls: FEEL (OFF / TEST), KIT (SLOOP's 32), LEVEL. hostsi
 `tools/gen_grooves.py` → `host/ond_grooves.h` (committed): 76 two-bar grooves from the Groove MIDI Dataset's 4/4
 beats at 65–100 BPM (HIP HOP 26, FUNK 32, SOUL 11, JAZZ 7), each the two bars that repeat best (most 90–100 %).
 FEEL / GROOVE / DRUNK in the engine (DRUNK, step 4's, came with it: it is how the timing is applied). Credited in
-`LICENSING.md`. The dataset itself is not in the repo (`C:\deveposeference\groove`, CC BY 4.0).
+`LICENSING.md`. The dataset itself is not in the repo (`C:\dev
+epos
+eference\groove`, CC BY 4.0).
+
+## Step 3 (2026-10-31): every bar different, fills — `refs/015-3/`
+
+Not SPICE (it skips whole steps: kick and snare too). The drummers' own playing instead: up to 8 bars from where
+the groove locks, and a fill bar from the fill recordings (`tools/gen_grooves.py`). The drum track holds two bars;
+the next is written into the half not playing, a bar ahead (`beat_schedule`). BARS (2 / 8, default 8), FILL
+(OFF / 4 / 8, default 8).
