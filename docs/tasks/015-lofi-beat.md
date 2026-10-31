@@ -116,3 +116,9 @@ and the breakers), the others the chosen SLOOP kit. A closed or pedal hat chokes
 hook: drums.c `drum_on` under `OND_BEAT` (the FM-1 build unchanged). KIT FOLDER and RELOAD in the BEAT view.
 Checked: a kick and a snare of the CC0 kit in the folder replace those lanes; the hats left are the kit's, to the
 sample.
+
+## Step 6a (2026-10-31, Ond 0.14): PUMP — `refs/015-6/`
+
+SLOOP's DUCK (`fx.c duck_block`) with its own depth under `OND_BEAT` (`drums.c ond_beat_pump`; Clipper's slot is
+the reverb TYPE). PUMP 0..127, default 0. YOUR KIT's hook moved after the kick's flag (a kick of yours pumps).
+FM-1 build unchanged, hostsim byte-identical. Next: 6b, the beat's own dusty bus.

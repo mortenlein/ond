@@ -673,7 +673,11 @@ static struct {
 
 static void duck_block(uint32_t adv)
 {
+#if CLIPPER_SYNTH && OND_BEAT
+    int32_t depth = ond_beat_pump * 258, x;             /* (Ond: BEAT's PUMP, 0..127, its own: host/ond_engine.c) */
+#else
     int32_t depth = CLIPPER_SYNTH ? 0 : song.g[G_DUCK] * 258, x;   /* (Clipper: its slot is the reverb TYPE) */
+#endif
     uint32_t len = BEAT_U / 2u;
     duck.g0 = duck.g1;
     if (drums.kick) {

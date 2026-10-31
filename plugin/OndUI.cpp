@@ -704,7 +704,7 @@ private:
         const float db = m > 1e-5f ? 20.f * std::log10(m) : -100.f, k = std::fmax(0.f, std::fmin(1.f, (db + 60.f) / 60.f));
         if (k > 0.f)
             fill(bx + 4.f, by + bh - 3.f, (bw - 8.f) * k, 2.f, db > -6.f ? ACCENT : TEXT, db > -6.f ? 1.f : 0.5f, 1.f);
-        pixelText(24.f, 60.f, "0.13", FAINT);
+        pixelText(24.f, 60.f, "0.14", FAINT);
         if (renaming)
             pixelText(bx + bw, by + bh + 6.f, "TYPE A NAME, ENTER", FAINT, 1.f, 1);
     }
@@ -899,7 +899,7 @@ private:
         pixelText(x0 + 14.f, y0 + 48.f, info, g ? TEXT : DIM, 1.f);
         button(x0 + w - 14.f - 120.f, y0 + 40.f, 120.f, 34.f, "NEW", false, -33);
         static const char *const KEYS[] = {"beat_feel", "beat_groove", "beat_bars", "beat_fill", "beat_drunk",
-                                           "beat_kit", "beat_level"};
+                                           "beat_kit", "beat_pump", "beat_level"};
         {   // the parts of the kit: lit in the groove, dark out of it
             const float gap = 8.f, by = y0 + 96.f, bw = (w - 28.f - 136.f - 6.f * gap) / 7.f;   // (all seven inside)
             pixelText(x0 + 14.f, by + 8.f, "IN THE GROOVE:", DIM);
@@ -909,8 +909,8 @@ private:
                 button(x0 + 150.f + (bw + gap) * (float)k, by, bw, 32.f, PART_NAMES[k], in, -6000 - k);   // (to x0 + w - 14)
             }
         }
-        const float cw = (w - 28.f) / 7.f, cy = y0 + 236.f;
-        for (int i = 0; i < 7; ++i) {
+        const float cw = (w - 28.f) / 8.f, cy = y0 + 236.f;
+        for (int i = 0; i < 8; ++i) {
             const int p = ond::paramOfKey(KEYS[i]);
             if (p < 0)
                 continue;

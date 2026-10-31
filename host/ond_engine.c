@@ -366,6 +366,8 @@ static const param_desc_t DRUNK_D = {"DRUNK", F_INT, 0, 200, 100, 0, "%"};
 static const char *const N_BARS[] = {"2", "8"};
 static const char *const N_FILL[] = {"OFF", "4", "8"};
 static const param_desc_t BARS_D = {"BARS", F_ENUM, 0, 1, 1, N_BARS, 0};
+/* PUMP: each kick dips the instrument, back over an eighth (SLOOP's DUCK, fx.c duck_block: (1 - t / T)^2) */
+static const param_desc_t PUMP_D = {"PUMP", F_PCT, 0, 127, 0, 0, 0};
 static const param_desc_t FILL_D = {"FILL", F_ENUM, 0, 2, 2, N_FILL, 0};
 /* the parts of the kit, each in or out of the groove (Morten: "toggle things out of the loop"): drums.c's lanes */
 static const char *const N_INOUT[] = {"OUT", "IN"};
@@ -401,6 +403,7 @@ static void beat_init(void)
     host_val[6] = 100;
     host_val[7] = BARS_D.def;
     host_val[8] = FILL_D.def;
+    host_val[9] = ond_beat_pump = 0;
     {
         int k;
         for (k = 0; k < 7; k++)
@@ -478,6 +481,7 @@ static const ctl_t CTL_TAB[] = {
     {"beat_cymbals", "BEAT", OND_SCOPE_HOST, 14, 1, &PART_D[4]},
     {"beat_toms", "BEAT", OND_SCOPE_HOST, 15, 1, &PART_D[5]},
     {"beat_perc", "BEAT", OND_SCOPE_HOST, 16, 1, &PART_D[6]},
+    {"beat_pump", "BEAT", OND_SCOPE_HOST, 9, 1, &PUMP_D},                /* (Ond 0.14) */
 };
 
 static const param_desc_t *ctl_desc(int c, int engine)
@@ -540,6 +544,8 @@ void ond_control_set(int c, int v)
         }
         if (k->id == 3)
             ond_beat_lvl = (int16_t)v;
+        if (k->id == 9)
+            ond_beat_pump = (int16_t)v;
     } else
         trk[0].p[k->scope == OND_SCOPE_EDIT ? P_E0 + k->id : k->id] = (int16_t)v;
 }

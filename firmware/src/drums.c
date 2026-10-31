@@ -12,6 +12,7 @@
  * sends are its own (host/ond_engine.c) */
 #if CLIPPER_SYNTH && OND_BEAT
 static int16_t ond_beat_lvl = 100, ond_beat_rev, ond_beat_dly;
+static int16_t ond_beat_pump;                       /* the kick ducking the instrument: fx.c duck_block's depth */
 #define DR_LVL ond_beat_lvl
 #define DR_REV ond_beat_rev
 #define DR_DLY ond_beat_dly
@@ -260,14 +261,14 @@ static void drum_on(uint32_t note, uint32_t vel)
     voice_t *v = &drums.v[0];
     uint32_t i, zi = 0xFFFFu, kit = drum_kit();
     int32_t zid = -1;
-#if OND_BEAT
-    if (ond_kit_hit(lane_of_note(note), vel))
-        return;                                     /* (Ond: the player's own recording for this lane) */
-#endif
     if (note != 76u && note != 77u)                 /* the pads and key LEDs (not the click's wood block) */
         drums.hits |= (uint16_t)(1u << lane_of_note(note));
     if (note == 35u || note == 36u)
         drums.kick = 1;                             /* (DUCK) */
+#if OND_BEAT
+    if (ond_kit_hit(lane_of_note(note), vel))
+        return;                                     /* (Ond: the player's own recording for this lane) */
+#endif
     if (kit >= DRUM_SYN) {                          /* SYN1..SYN4: your synthesised kit */
         const dsu_kit_t *u = dsu_kit(kit - DRUM_SYN);
         drum_synth_on(note, vel, kit, u->s, u->crush);
