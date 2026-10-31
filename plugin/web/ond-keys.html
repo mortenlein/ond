@@ -15,6 +15,7 @@
   #ond-ctl button { flex: 1; font: inherit; color: #d8d3c8; background: #26241f; border: 0; border-radius: 6px;
     touch-action: none; }
   #ond-ctl button.on { background: #e8a33d; color: #111; }
+  #ond-ctl button.stop { background: #5a1f1a; color: #f0d8d0; }
   #ond-ctl .oct { text-align: center; line-height: 1.6; }
   #ond-ctl a { color: #6b675f; font-size: 0.7em; text-align: center; }
   #ond-main { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -41,6 +42,7 @@
     <div class="row"><button id="ond-od">OCT -</button><button id="ond-ou">OCT +</button></div>
     <div class="oct" id="ond-oct">OCT 0</div>
     <div class="row"><button id="ond-pad">PADS</button><button id="ond-buf">BUF</button></div>
+    <div class="row"><button id="ond-stop" class="stop">STOP</button></div>
     <a href="https://github.com/mortenlein/ond" target="_blank" rel="noopener">web __OND_WEB_V__ · GPL-3.0, source</a>
     <div class="oct" id="ond-load"></div>
   </div>
@@ -159,6 +161,13 @@
   tap('ond-od', function () { oct = Math.max(-3, oct - 1); });
   tap('ond-ou', function () { oct = Math.min(3, oct + 1); });
   tap('ond-pad', function () { pads = !pads; });
+  tap('ond-stop', function () {           // every sound off: the engine, and every key and pad let go here
+    send(0xF3, 0, 0);
+    held = {};
+    padHeld = {};
+    keys.forEach(function (k) { k.down = 0; k.el.classList.remove('down'); });
+    Array.prototype.forEach.call(document.querySelectorAll('.op.down'), function (el) { el.classList.remove('down'); });
+  });
 
   // the pads: down / up as the breaker's pad (several fingers: the latest held plays)
   var padEl = document.getElementById('ond-pads'), padHeld = {};

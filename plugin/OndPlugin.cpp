@@ -10,7 +10,7 @@
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 // The web page's own keys (plugin/web/ond-keys.html): one Ond a page, and its audio runs on the page's thread, so a
-// plain ring. 0x80..0xEF: MIDI; 0xF1 / 0xF2 d1: breaker d1 down / up (the FM-1's white keys, as its punch-in).
+// plain ring. 0x80..0xEF: MIDI; 0xF1 / 0xF2 d1: breaker d1 down / up (PADS); 0xF3: STOP, every sound off.
 static uint32_t webQ[256];
 static uint32_t webHead = 0, webTail = 0;
 extern "C" EMSCRIPTEN_KEEPALIVE void ond_web_in(int st, int d1, int d2)
@@ -80,7 +80,7 @@ protected:
     const char *getMaker() const override { return "Morten Lein"; }
     const char *getHomePage() const override { return "https://github.com/mortenlein/ond"; }
     const char *getLicense() const override { return "GPL-3.0-only"; }
-    uint32_t getVersion() const override { return d_version(0, 20, 0); }
+    uint32_t getVersion() const override { return d_version(0, 21, 0); }
 
     // "preset": the player's preset loaded on the screen (its name; "" a factory sound), kept with the Live set
     // so the screen shows it again. The sound itself is in the parameters.
@@ -455,7 +455,16 @@ private:
         while (webTail != webHead) {
             const uint32_t m = webQ[webTail++ & 255u];
             const uint8_t st = m & 255u, d1 = (m >> 8) & 255u, d2 = (m >> 16) & 255u;
-            if (st == 0xF1u || st == 0xF2u) {
+            if (st == 0xF3u) {                  // STOP: every sound (notes, held drones, breakers) off, now
+                eng.all_notes_off();
+                padsHeld = 0;
+                for (auto &w : held)
+                    w = 0;
+                droneNow[0] = droneNow[1] = -1;
+                landLeft = -1;
+                breakerNow = -1;
+                eng.breaker(-1);
+            } else if (st == 0xF1u || st == 0xF2u) {
                 if (d1 < ond::NBREAK)
                     padPress(d1, st == 0xF1u);
             } else {

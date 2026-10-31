@@ -138,6 +138,8 @@ protected:
             drawBeat();
         if (view == 4 && !browserOpen)
             drawLink();
+        if (drag >= 0)
+            drawDragReadout();
         restore();
     }
 
@@ -712,7 +714,7 @@ private:
         const float db = m > 1e-5f ? 20.f * std::log10(m) : -100.f, k = std::fmax(0.f, std::fmin(1.f, (db + 60.f) / 60.f));
         if (k > 0.f)
             fill(bx + 4.f, by + bh - 3.f, (bw - 8.f) * k, 2.f, db > -6.f ? ACCENT : TEXT, db > -6.f ? 1.f : 0.5f, 1.f);
-        pixelText(24.f, 60.f, "0.20", FAINT);
+        pixelText(24.f, 60.f, "0.21", FAINT);
         if (renaming)
             pixelText(bx + bw, by + bh + 6.f, "TYPE A NAME, ENTER", FAINT, 1.f, 1);
     }
@@ -1079,6 +1081,20 @@ private:
             ond_control_text(ond::paramControls()[(size_t)p], currentEngine(), v, buf, sizeof buf);
             pixelText(cx, cy + r + 6.f, buf, live ? ACCENT : TEXT, 1.f, 0);
         }
+    }
+
+    // the knob being turned, large, over the header: under a finger (a phone) the knob and its value are hidden
+    void drawDragReadout()
+    {
+        if (drag < 0 || (size_t)drag >= ond::paramControls().size())
+            return;
+        ond_control_t info;
+        controlInfo(drag, info);
+        char buf[32];
+        ond_control_text(ond::paramControls()[(size_t)drag], currentEngine(), intValue(drag), buf, sizeof buf);
+        fill(120.f, 6.f, W - 240.f, 64.f, PANEL, 1.f, 8.f);
+        pixelText(W / 2.f - 16.f, 22.f, info.label, DIM, 2.f, 1);
+        pixelText(W / 2.f + 16.f, 22.f, buf, ACCENT, 2.f, -1);
     }
 
     // the envelope's shape from ATK DEC SUS REL (0..127 each; the times drawn on a log-like scale)
