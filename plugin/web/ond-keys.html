@@ -35,8 +35,9 @@
   <div id="ond-ctl">
     <div class="row"><button id="ond-od">OCT -</button><button id="ond-ou">OCT +</button></div>
     <div class="oct" id="ond-oct">OCT 0</div>
-    <div class="row"><button id="ond-brudd">BRUDD</button></div>
+    <div class="row"><button id="ond-brudd">BRUDD</button><button id="ond-buf">BUF</button></div>
     <a href="https://github.com/mortenlein/ond" target="_blank" rel="noopener">web __OND_WEB_V__ · GPL-3.0, source</a>
+    <div class="oct" id="ond-load"></div>
   </div>
   <div id="ond-kb"></div>
 </div>
@@ -53,6 +54,12 @@
         String(err && err.stack || '').slice(0, 600);
     }
   };
+  // BUF: the audio buffer (build_web.sh makes DPF's bridge take Module.ondBufferSize). Smaller: the keys answer
+  // sooner; too small for the phone: crackles. Kept in this browser; a change reloads the page.
+  var BUFS = [256, 512, 1024, 2048], buf = 0;
+  try { buf = +localStorage.getItem('ond-buf') || 0; } catch (x) {}
+  if (BUFS.indexOf(buf) < 0) buf = matchMedia('(pointer: coarse)').matches ? 512 : 1024;
+  if (window.Module) Module.ondBufferSize = buf;
   var NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   var FIRST = 53, COUNT = 27;            // F3..G5, the FM-1's keys
   var root = document.getElementById('ond-keys'), kb = document.getElementById('ond-kb');
@@ -144,6 +151,32 @@
   tap('ond-od', function () { oct = Math.max(-3, oct - 1); });
   tap('ond-ou', function () { oct = Math.min(3, oct + 1); });
   tap('ond-brudd', function () { brudd = !brudd; });
+  tap('ond-buf', function () {
+    var next = BUFS[(BUFS.indexOf(buf) + 1) % BUFS.length];
+    try { localStorage.setItem('ond-buf', next); } catch (x) {}
+    location.reload();
+  });
+  document.getElementById('ond-buf').textContent = 'BUF ' + buf;
+
+  // the audio thread's load: how much of each buffer's time Ond took to fill it (over 100%: dropouts)
+  var load = 0, rate = 48000;
+  var watch = setInterval(function () {
+    var wab = window.Module && Module.WebAudioBridge, p = wab && wab.processor;
+    if (!p || !p.onaudioprocess || p.ondWatched) return;
+    var run = p.onaudioprocess;
+    rate = wab.audioContext.sampleRate;
+    p.onaudioprocess = function (e) {
+      var t = performance.now();
+      run(e);
+      var used = (performance.now() - t) / (e.outputBuffer.length / rate * 1000);
+      load = load * 0.9 + used * 0.1;
+    };
+    p.ondWatched = true;
+  }, 250);
+  setInterval(function () {
+    document.getElementById('ond-load').textContent =
+      Math.round(buf / rate * 1000) + ' MS · LOAD ' + Math.round(load * 100) + '%';
+  }, 500);
 
   // the fit: the screen (1000 x 700) above the keys. On a phone the page is laid out wide enough for both and the
   // browser scales it to the glass; on a computer the window is what it is.

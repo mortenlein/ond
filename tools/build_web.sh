@@ -43,6 +43,11 @@ for a in ('if(e["inputBuffer"].length!=', 'if(e["inputBuffer"].numberOfChannels!
     s = s.replace(a, 'if(e["inputBuffer"])' + a)   # (the whole check inside the guard)
 if n < 2:
     raise SystemExit('build_web: DPF audio bridge changed, the inputBuffer guard did not apply')
+# its buffer: 2048 fixed (43 ms, about twice that heard); the page's BUF chooses (Module.ondBufferSize)
+a = 'return WAB["fakeSmallBufferSize"]?256:2048'
+if s.count(a) != 1:
+    raise SystemExit('build_web: DPF audio bridge changed, the buffer size hook did not apply')
+s = s.replace(a, 'return WAB["fakeSmallBufferSize"]?256:(Module["ondBufferSize"]||2048)')
 open(p, 'w', encoding='utf-8').write(s)
 print('audio bridge: %d checks guarded' % n)
 PYEOF
