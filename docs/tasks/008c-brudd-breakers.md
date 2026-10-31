@@ -70,3 +70,8 @@ first, in this order:
 ## Step 2 (2026-10-31): CATCH and LAND, ready to listen — `refs/008c-2/LISTEN.md`
 
 CATCH in `punch.c` (under `OND_PUNCH`: the FM-1 build is the same file), LAND in the plugin (the release waits).
+
+## Stage 2, plumbing (2026-10-31): the hits — `refs/008c-3/LISTEN.md`
+
+`Documents/Ond/Hits`, the first 8 WAV files by name; one-shots into the mix before DUST and the breakers
+(`fx.c` hook under `OND_HITS`: the FM-1 build is the same file). Pads: bank A on channel 10, LEARN, the screen.

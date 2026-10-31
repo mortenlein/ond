@@ -26,6 +26,12 @@ bool presetExists(const std::string &name);
 std::string freeName(const std::string &base);   // "CHAPEL 2", "CHAPEL 3" ... the first not taken
 void openPresetFolder();                   // in Explorer / Finder / the file manager
 
+// Brudd's hits: the WAV files in Documents/Ond/Hits, the first 8 by name (slots 1..8)
+std::vector<std::string> listHits();       // their names (without .wav)
+// a hit, read and brought to 44.1 kHz (the engine's rate), up to 20 s; false: not a WAV this reads
+bool loadHit(const std::string &name, std::vector<float> &l, std::vector<float> &r);
+void openHitsFolder();
+
 // the pads learned for Brudd, for every Live set: Documents/Ond/pads.txt (OndShared.hpp PadMap's text)
 std::string loadPadsText();
 void savePadsText(const std::string &text);

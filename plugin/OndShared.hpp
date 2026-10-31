@@ -89,6 +89,7 @@ inline const std::vector<int> &paramControls()  // parameter index -> control in
             if (!seen)
                 m.push_back(i);
         }
+        m.push_back(-7);                        // (0.7) the hit
         return m;
     }();
     return map;
@@ -126,6 +127,7 @@ inline int breakerOutParam() { return paramOfCode(-4); }
 // the last MIDI in (out, for the screen: LEARN, and what arrives): count % 16 * 4096 + channel * 256 + CC 128 + number
 inline int midiInParam() { return paramOfCode(-5); }
 inline int layerSoundParam() { return paramOfCode(-6); }
+inline int hitParam() { return paramOfCode(-7); }   // (0.7) a hit from the screen: 1..8 while its pad is held
 inline constexpr int LAYER_SOUND_DEF = 4;   // sounds()[4]: HYBRID DRONE, as ond_init's layer
 
 // the MPK Mini's pads on channel 10 (docs/controller-mpk-mini.md): bank A (notes 36..43) the hits (Brudd stage 2),
@@ -138,8 +140,10 @@ inline constexpr int PAD_B[8] = {4, 6, 13, 11, 7, 5, 0, 14};
 // hands a plugin everything on channel 1): a note 0..127, a CC 128 + number, -1 none. As text, for the plugin's
 // state and Documents/Ond/pads.txt: "4=n44 6=c20" (breaker=note / cc)
 inline constexpr int NBREAK = 16;
+inline constexpr int NPAD = NBREAK + 8;        // (and the 8 hits: 16..23)
+inline constexpr int PAD_A_FIRST = 36;         // the MPK's bank A on channel 10: the hits, until learned
 struct PadMap {
-    int code[NBREAK];
+    int code[NPAD];
     PadMap() { clear(); }
     void clear()
     {
@@ -158,13 +162,13 @@ struct PadMap {
         for (int &k : code)
             if (k == c)
                 k = -1;
-        if (breaker >= 0 && breaker < NBREAK)
+        if (breaker >= 0 && breaker < NPAD)
             code[breaker] = c;
     }
     std::string text() const
     {
         std::string t;
-        for (int i = 0; i < NBREAK; ++i)
+        for (int i = 0; i < NPAD; ++i)
             if (code[i] >= 0)
                 t += (t.empty() ? "" : " ") + std::to_string(i) + (code[i] < 128 ? "=n" : "=c") + std::to_string(code[i] & 127);
         return t;
@@ -175,7 +179,7 @@ struct PadMap {
         int b, v, k;
         char kind;
         while (s && std::sscanf(s, " %d=%c%d%n", &b, &kind, &v, &k) == 3) {
-            if (b >= 0 && b < NBREAK && v >= 0 && v < 128 && (kind == 'n' || kind == 'c'))
+            if (b >= 0 && b < NPAD && v >= 0 && v < 128 && (kind == 'n' || kind == 'c'))
                 m.assign(b, kind == 'n' ? v : 128 + v);
             s += k;
         }

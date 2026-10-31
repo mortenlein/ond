@@ -3,6 +3,7 @@
 // The player's own presets on disk (OndPresets.hpp). The only platform code: where Documents is, and opening the
 // folder.
 #include "OndPresets.hpp"
+#include "Resampler.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -172,6 +173,98 @@ std::string freeName(const std::string &base)
             return n;
     }
     return base;
+}
+
+fs::path hitsDir()
+{
+    fs::path d = presetDir().parent_path() / "Hits";
+    std::error_code ec;
+    fs::create_directories(d, ec);
+    return d;
+}
+
+std::vector<std::string> listHits()
+{
+    std::vector<std::string> names;
+    std::error_code ec;
+    for (const auto &e : fs::directory_iterator(hitsDir(), ec))
+        if (lower(e.path().extension().u8string()) == ".wav")
+            names.push_back(e.path().stem().u8string());
+    std::sort(names.begin(), names.end(), [](const std::string &a, const std::string &b) { return lower(a) < lower(b); });
+    if (names.size() > 8)
+        names.resize(8);
+    return names;
+}
+
+// RIFF WAVE: PCM 16 / 24 / 32-bit or float 32 (WAVE_FORMAT_EXTENSIBLE too), the first two channels
+bool loadHit(const std::string &name, std::vector<float> &l, std::vector<float> &r)
+{
+    std::ifstream f(hitsDir() / fs::u8path(name + ".wav"), std::ios::binary);
+    std::vector<unsigned char> d((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    auto u16 = [&](size_t i) { return (unsigned)d[i] | (unsigned)d[i + 1] << 8; };
+    auto u32 = [&](size_t i) { return u16(i) | (unsigned)u16(i + 2) << 16; };
+    unsigned fmt = 0, ch = 0, rate = 0, bits = 0;
+    size_t data = 0, dlen = 0, i = 12;
+    if (d.size() < 12 || std::memcmp(d.data(), "RIFF", 4) || std::memcmp(d.data() + 8, "WAVE", 4))
+        return false;
+    while (i + 8 <= d.size()) {
+        const size_t len = u32(i + 4), body = i + 8;
+        if (!std::memcmp(d.data() + i, "fmt ", 4) && body + 16 <= d.size()) {
+            fmt = u16(body), ch = u16(body + 2), rate = u32(body + 4), bits = u16(body + 14);
+            if (fmt == 0xFFFE && body + 26 <= d.size())
+                fmt = u16(body + 24);          // (the subformat's first word: 1 PCM, 3 float)
+        } else if (!std::memcmp(d.data() + i, "data", 4)) {
+            data = body, dlen = std::min(len, d.size() - body);
+            break;
+        }
+        i = body + len + (len & 1u);
+    }
+    if (!data || !ch || !rate || !(fmt == 1 && (bits == 16 || bits == 24 || bits == 32)) && !(fmt == 3 && bits == 32))
+        return false;
+    const size_t bps = bits / 8, frames = std::min(dlen / (bps * ch), (size_t)rate * 20u);
+    auto sample = [&](size_t fr, unsigned c) -> float {
+        const size_t p = data + (fr * ch + c) * bps;
+        if (fmt == 3) {
+            float v;
+            const unsigned w = u32(p);
+            std::memcpy(&v, &w, 4);
+            return v;
+        }
+        if (bits == 16)
+            return (float)(int16_t)u16(p) / 32768.f;
+        if (bits == 24)
+            return (float)((int32_t)((unsigned)d[p] << 8 | (unsigned)d[p + 1] << 16 | (unsigned)d[p + 2] << 24) >> 8) / 8388608.f;
+        return (float)(int32_t)u32(p) / 2147483648.f;
+    };
+    l.clear(), r.clear();
+    if (rate == 44100) {
+        for (size_t fr = 0; fr < frames; ++fr)
+            l.push_back(sample(fr, 0)), r.push_back(sample(fr, ch > 1 ? 1 : 0));
+        return true;
+    }
+    Resampler rs;                              // (the plugin's own: windowed sinc, 32 taps)
+    rs.setup((double)rate, 44100.0);
+    size_t fr = 0;
+    const size_t out = (size_t)((double)frames * 44100.0 / rate);
+    while (l.size() < out) {
+        float a, b;
+        while (rs.needsInput())
+            fr < frames ? rs.push(sample(fr, 0), sample(fr, ch > 1 ? 1 : 0)) : rs.push(0.f, 0.f), ++fr;
+        rs.read(a, b);
+        l.push_back(a), r.push_back(b);
+    }
+    return true;
+}
+
+void openHitsFolder()
+{
+#ifdef _WIN32
+    ShellExecuteW(nullptr, L"open", hitsDir().wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+#elif defined(__APPLE__)
+    std::system(("open \"" + hitsDir().u8string() + "\"").c_str());
+#else
+    std::system(("xdg-open \"" + hitsDir().u8string() + "\" &").c_str());
+#endif
 }
 
 std::string loadPadsText()

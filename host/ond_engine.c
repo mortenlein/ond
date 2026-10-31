@@ -9,6 +9,7 @@
 #define CLIPPER_SYNTH 1
 #endif
 #define OND_PUNCH 1                     /* the punch-in effects as Brudd's breakers (punch.c: the ring's 64 KB) */
+#define OND_HITS 1                      /* Brudd's hits into the mix (fx.c mix_block, ond_hits_mix below) */
 #ifndef __GNUC__
 #define __attribute__(x)                /* (MSVC: the firmware's section / alignment attributes) */
 #endif
@@ -36,6 +37,34 @@ static uint32_t cpu1_ticks(void) { return 0; }
 #include "../firmware/src/params.c"
 #include "../firmware/src/voice.c"
 #include "../firmware/src/slicer.c"
+/* ---- Brudd's hits (ond_engine.h): per slot the voice playing and the one fading out under a retrigger */
+static struct {
+    const float *l, *r;
+    uint32_t len;
+    struct { uint32_t pos; int32_t g, fade; } v[2];   /* g: Q15 gain; fade: samples left of a 64-sample fade, -1 none */
+} hits[OND_NHITS];
+static void ond_hits_mix(int32_t *ml, int32_t *mr, uint32_t n)
+{
+    uint32_t s, k, i;
+    for (s = 0; s < OND_NHITS; s++) {
+        if (!hits[s].l)
+            continue;
+        for (k = 0; k < 2u; k++) {
+            uint32_t pos = hits[s].v[k].pos;
+            const int32_t g = hits[s].v[k].g;
+            int32_t fade = hits[s].v[k].fade;
+            for (i = 0; i < n && pos < hits[s].len && fade != 0; i++, pos++) {
+                const float gf = (float)g * (fade > 0 ? (float)fade * (1.0f / 64.0f) : 1.0f) * (32767.0f / 32768.0f);
+                ml[i] += (int32_t)(hits[s].l[pos] * gf);
+                mr[i] += (int32_t)(hits[s].r[pos] * gf);
+                if (fade > 0)
+                    fade--;
+            }
+            hits[s].v[k].pos = fade == 0 ? hits[s].len : pos;
+            hits[s].v[k].fade = fade;
+        }
+    }
+}
 #include "../firmware/src/fx.c"
 static void fm1_delay_ms(uint32_t ms) { (void)ms; }
 #include "../firmware/src/usb.c"
@@ -349,6 +378,29 @@ void ond_breaker(int i) { punch.req = (int8_t)(i >= 0 && i < (int)PUNCH_NFX ? i 
 int ond_breaker_playing(void) { return punch.cur; }
 void ond_breaker_catch(int ms) { punch_catch = ms > 0 ? (uint32_t)(ms > 2000 ? 2000 : ms) * (uint32_t)FS / 1000u : 0u; }
 double ond_tempo(void) { return (double)song.g[G_BPM]; }
+
+void ond_hit_set(int slot, const float *l, const float *r, uint32_t frames)
+{
+    if (slot < 0 || slot >= OND_NHITS)
+        return;
+    hits[slot].l = l;
+    hits[slot].r = r ? r : l;
+    hits[slot].len = l ? frames : 0u;
+    hits[slot].v[0].pos = hits[slot].v[1].pos = hits[slot].len;   /* (silent till hit) */
+}
+
+void ond_hit(int slot, int velocity)
+{
+    int32_t v = velocity < 0 ? 0 : velocity > 127 ? 127 : velocity;
+    if (slot < 0 || slot >= OND_NHITS || !hits[slot].l || !v)
+        return;
+    hits[slot].v[1] = hits[slot].v[0];                  /* the last one fades out under the new one */
+    if (hits[slot].v[1].pos < hits[slot].len)
+        hits[slot].v[1].fade = 64;
+    hits[slot].v[0].pos = 0;
+    hits[slot].v[0].g = v * v * 2;                      /* (127: 32258, Q15) */
+    hits[slot].v[0].fade = -1;
+}
 
 void ond_render(float *l, float *r, uint32_t n)
 {

@@ -61,6 +61,14 @@ int ond_breaker_playing(void);           /* the one sounding (fading out include
 void ond_breaker_catch(int ms);          /* CATCH: the release fights back over ms (0: SLOOP's 64 samples) */
 double ond_tempo(void);                  /* the tempo the engine runs at (the host's, else 90) */
 
+/* Brudd's hits (docs/rhythm-breaks.md, bank A): one-shot recordings the player chose, into the mix before DUST and
+ * the breakers. The host owns the samples (OND_FS, -1..1; r may be l for mono) and keeps them until it sets another
+ * or NULL; set them from the audio thread (between renders). ond_hit: velocity 1..127 the level (its square, as a
+ * key's), a slot playing again fades its last out over 64 samples */
+#define OND_NHITS 8
+void ond_hit_set(int slot, const float *l, const float *r, uint32_t frames);
+void ond_hit(int slot, int velocity);
+
 /* n frames (a multiple of OND_BLOCK) of stereo at OND_FS, -1..1 */
 void ond_render(float *left, float *right, uint32_t n);
 

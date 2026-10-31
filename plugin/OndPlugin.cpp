@@ -20,7 +20,7 @@ std::atomic<void *> gOwner{nullptr};
 class OndPlugin : public Plugin {
 public:
     OndPlugin()
-        : Plugin((uint32_t)ond::paramCount(), 0, 2),
+        : Plugin((uint32_t)ond::paramCount(), 0, 3),
           values(new std::atomic<float>[(size_t)ond::paramCount()]),
           dirty(new std::atomic<bool>[(size_t)ond::paramCount()]),
           touched(new std::atomic<bool>[(size_t)ond::paramCount()])
@@ -32,9 +32,16 @@ public:
             dirty[i] = touched[i] = false;
         }
         setPads(ond::PadMap::parse(ond::loadPadsText().c_str()));   // the pads learned (every set's, until a
-    }                                                                 // set brings its own)
+        loadHits();                                                   // set brings its own); the hits
+    }
 
-    ~OndPlugin() override { release(); }
+    ~OndPlugin() override
+    {
+        release();
+        delete hitsPending.exchange(nullptr);
+        delete hitsRetired.exchange(nullptr);
+        delete hitsLive;
+    }
 
 protected:
     const char *getLabel() const override { return "Ond"; }
@@ -52,9 +59,9 @@ protected:
     // "pads": Brudd's pads learned on the screen (OndShared.hpp PadMap), kept with the set too
     void initState(uint32_t index, State &state) override
     {
-        state.key = index == 0 ? "preset" : "pads";
+        state.key = index == 0 ? "preset" : index == 1 ? "pads" : "hits";   // ("hits": reload the folder)
         state.defaultValue = "";
-        state.label = index == 0 ? "Preset" : "Pads";
+        state.label = index == 0 ? "Preset" : index == 1 ? "Pads" : "Hits";
         state.hints = 0;
     }
     String getState(const char *key) const override
@@ -67,6 +74,8 @@ protected:
             userPreset = value;
         else if (!std::strcmp(key, "pads") && value[0])
             setPads(ond::PadMap::parse(value));
+        else if (!std::strcmp(key, "hits") && value[0])
+            loadHits();
     }
 
     void initParameter(uint32_t index, Parameter &p) override
@@ -95,6 +104,13 @@ protected:
                 p.enumValues.restrictedMode = true;
                 p.enumValues.values = ev;
             }
+            return;
+        }
+        if (c == -7) {
+            p.hints = kParameterIsAutomatable | kParameterIsInteger;
+            p.name = "Hit";
+            p.symbol = "hit";
+            p.ranges.min = 0.f, p.ranges.max = 8.f, p.ranges.def = 0.f;
             return;
         }
         if (c == -6) {
@@ -159,8 +175,11 @@ protected:
 
     void setParameterValue(uint32_t index, float value) override
     {
-        if (index >= (uint32_t)ond::paramCount() || (ond::paramControls()[index] <= -2 && ond::paramControls()[index] != -3))
-            return;                             // (the outputs)
+        if (index >= (uint32_t)ond::paramCount())
+            return;
+        const int c = ond::paramControls()[index];
+        if (c == -2 || c == -4 || c == -5)
+            return;                             // (the outputs: meter, breaker playing, MIDI in)
         values[index] = value;
         touched[index] = true;                  // set by the host or the screen: not the sound's own any more
         dirty[index] = true;                    // applied on the audio thread, at the next run
@@ -178,6 +197,11 @@ protected:
             dirty[i] = touched[i].load();
         resampler.setup(OND_FS, getSampleRate());
         blockPos = OND_BLOCK;
+        if (hitsLive)                           // (ond_init left the engine's hits: give them back)
+            for (int s = 0; s < OND_NHITS; ++s)
+                ond_hit_set(s, hitsLive->l[s].empty() ? nullptr : hitsLive->l[s].data(), hitsLive->r[s].data(),
+                            (uint32_t)hitsLive->l[s].size());
+        hitNow = 0;
         meter = 0.f;
         padsHeld = 0;
         breakerNow = -1;
@@ -205,6 +229,13 @@ protected:
         if (tp.bbt.valid)
             ond_set_tempo(tp.bbt.beatsPerMinute);
         applyParameters();
+        takeHits();
+        {   // the screen's hit pads (and automation): a hit as the value turns to a slot
+            const int h = (int)std::lround(values[ond::hitParam()].load());
+            if (h != hitNow && h > 0)
+                ond_hit(h - 1, 100);
+            hitNow = h;
+        }
         blockStart = frameNow;
         uint32_t done = 0, e = 0;
         while (done < frames) {
@@ -268,7 +299,7 @@ private:
     {
         for (int c = 0; c < 256; ++c)
             padOf[c] = -1;
-        for (int b = 0; b < ond::NBREAK; ++b)
+        for (int b = 0; b < ond::NPAD; ++b)
             if (m.code[b] >= 0)
                 padOf[m.code[b]] = (int8_t)b;
         padsLearned = !m.empty();
@@ -290,13 +321,21 @@ private:
         if (note || cc)
             b = padOf[(cc ? 128 : 0) + (d1 & 127)];
         if (b < 0 && !padsLearned && note && (st & 0x0Fu) == 9u) {
-            const int pad = (int)d1 - ond::PAD_B_FIRST;
-            if (pad < 0 || pad >= 8)
+            const int pad = (int)d1 - ond::PAD_B_FIRST, hit = (int)d1 - ond::PAD_A_FIRST;
+            if (hit >= 0 && hit < 8)
+                b = ond::NBREAK + hit;           // bank A: the hits
+            else if (pad >= 0 && pad < 8)
+                b = ond::PAD_B[pad];             // bank B: the breakers
+            else
                 return;                          // (channel 10: Brudd's, never the organ)
-            b = ond::PAD_B[pad];
         }
         if (b < 0) {
             ond_midi(st, d1, d2);
+            return;
+        }
+        if (b >= ond::NBREAK) {                  // a hit: on the press, its velocity (a CC: its value)
+            if (press)
+                ond_hit(b - ond::NBREAK, d2);
             return;
         }
         for (int i = 0; i < padsHeld; ++i)       // (out of the stack wherever it is)
@@ -354,6 +393,31 @@ private:
             left = std::ceil(since / divFrames) * divFrames - since;
         }
         return left < 1.0 ? 0 : (int64_t)left;
+    }
+
+    // the hits: read from the folder off the audio thread, handed over at the next run (takeHits), the old
+    // set freed here at the next reload (never on the audio thread)
+    struct HitBank {
+        std::vector<float> l[OND_NHITS], r[OND_NHITS];
+    };
+    void loadHits()
+    {
+        HitBank *b = new HitBank;
+        const auto names = ond::listHits();
+        for (size_t s = 0; s < names.size() && s < (size_t)OND_NHITS; ++s)
+            ond::loadHit(names[s], b->l[s], b->r[s]);
+        delete hitsRetired.exchange(nullptr);
+        delete hitsPending.exchange(b);         // (one the audio never took: never heard, freed)
+    }
+    void takeHits()                             // (the audio thread)
+    {
+        HitBank *b = hitsPending.exchange(nullptr);
+        if (!b)
+            return;
+        for (int s = 0; s < OND_NHITS; ++s)
+            ond_hit_set(s, b->l[s].empty() ? nullptr : b->l[s].data(), b->r[s].data(), (uint32_t)b->l[s].size());
+        delete hitsRetired.exchange(hitsLive);  // (a set retired twice before a reload: the older freed here, rare)
+        hitsLive = b;
     }
 
     void engineSample(float &l, float &r)
@@ -426,6 +490,9 @@ private:
     float meter = 0.f;
     int padStack[ond::NBREAK] = {}, padsHeld = 0, breakerNow = -1, midiSeen = 0;
     int64_t frameNow = 0, blockStart = 0, pressedAt = 0, landLeft = -1;   // (LAND: output frames)
+    std::atomic<HitBank *> hitsPending{nullptr}, hitsRetired{nullptr};
+    HitBank *hitsLive = nullptr;
+    int hitNow = 0;
     std::atomic<int8_t> padOf[256];
     std::atomic<bool> padsLearned{false};
     std::string padsText;

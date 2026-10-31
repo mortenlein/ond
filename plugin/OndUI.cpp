@@ -63,7 +63,8 @@ struct Hit {
                                    // the browser: -100 OND, -101 MINE, -200-e an engine, -1000-i a sound,
                                    // -2000-k my preset k, -3000-k delete it, -30 RENAME, -31 the folder;
                                    // -22 the BRUDD view, -4000-i breaker i's pad, -23 LEARN; -24 the LAYER
-                                   // view, -25/-26 the layer's previous / next sound, -27 its browser
+                                   // view, -25/-26 the layer's previous / next sound, -27 its browser;
+                                   // -5000-k hit k's pad, -28 the hits' folder, -29 RELOAD them
 };
 
 } // namespace
@@ -79,6 +80,7 @@ public:
             setSize((uint)(W * sf), (uint)(H * sf));
         mine = ond::listPresets();
         pads = ond::PadMap::parse(ond::loadPadsText().c_str());
+        hitNames = ond::listHits();
     }
 
 protected:
@@ -144,6 +146,12 @@ protected:
                 padDown = -1;
                 repaint();
             }
+            if (hitDown >= 0) {
+                setValue(ond::hitParam(), 0.f, false);
+                editParameter((uint32_t)ond::hitParam(), false);
+                hitDown = -1;
+                repaint();
+            }
             if (drag >= 0) {
                 if (!moved && isEnum(drag)) {
                     stepValue(drag, 1);              // a click on a named value: the next one
@@ -183,8 +191,15 @@ protected:
             } else if (h.param == -23) {
                 learning = !learning;
                 learnArmed = -1;
-            } else if (h.param <= -4000 && learning) {   // LEARN: arm this breaker; armed again: forget its pad
-                const int i = -4000 - h.param;
+            } else if (h.param == -28) {
+                ond::openHitsFolder();
+            } else if (h.param == -29) {
+                hitNames = ond::listHits();
+                char n[16];
+                std::snprintf(n, sizeof n, "%u", ++hitsReloads);
+                setState("hits", n);                 // (the plugin reads the folder again)
+            } else if (h.param <= -4000 && learning) {   // LEARN: arm this breaker or hit; again: forget its pad
+                const int i = h.param <= -5000 ? ond::NBREAK + (-5000 - h.param) : -4000 - h.param;
                 if (learnArmed == i) {
                     pads.assign(i, -1);
                     learnArmed = -1;
@@ -192,6 +207,10 @@ protected:
                 } else {
                     learnArmed = i;
                 }
+            } else if (h.param <= -5000) {
+                hitDown = -5000 - h.param;           // a hit: heard on the press
+                editParameter((uint32_t)ond::hitParam(), true);
+                setValue(ond::hitParam(), (float)(hitDown + 1), false);
             } else if (h.param <= -4000) {
                 padDown = -4000 - h.param;           // held while the button is
                 editParameter((uint32_t)ond::breakerParam(), true);
@@ -672,14 +691,14 @@ private:
         }
         const int n = ond_breaker_count(), playing = (int)std::lround(vals[(size_t)ond::breakerOutParam()]) - 1;
         const float side = 130.f;           // CATCH and LAND on the right
-        const float gap = 10.f, pw = (w - 28.f - side - 7.f * gap) / 8.f, ph = (h - 50.f - gap) / 2.f;
+        const float gap = 8.f, pw = (w - 28.f - side - 7.f * gap) / 8.f, ph = (h - 50.f - 2.f * gap) / 3.f;
         static const char *const KEYS[2] = {"catch", "land"};
         for (int k = 0; k < 2; ++k) {
             const int p = ond::paramOfKey(KEYS[k]);
-            const float cx = x0 + w - 14.f - side / 2.f + 6.f, cy = y0 + 36.f + ph * ((float)k + 0.5f) + gap * (float)k;
+            const float cx = x0 + w - 14.f - side / 2.f + 6.f, cy = y0 + 30.f + ph * ((float)k + 0.5f) + gap * (float)k;
             if (p < 0)
                 continue;
-            drawKnob(p, cx, cy + 4.f, 26.f);
+            drawKnob(p, cx, cy + 8.f, 20.f);
             hits.push_back({cx - side / 2.f, cy - ph / 2.f, side, ph, p});
         }
         for (int i = 0; i < n; ++i) {
@@ -703,6 +722,29 @@ private:
                 pixelText(px + 10.f, py + 8.f, tag.c_str(), on ? BG : armed || learning ? ACCENT : FAINT);
             hits.push_back({px, py, pw, ph, -4000 - i});
         }
+        for (int k = 0; k < 8; ++k) {            // the hits: the folder's first eight, by name
+            const float px = x0 + 14.f + (pw + gap) * (float)k, py = y0 + 36.f + (ph + gap) * 2.f;
+            const bool armed = learning && learnArmed == ond::NBREAK + k, down = hitDown == k;
+            const bool has = k < (int)hitNames.size();
+            fill(px, py, pw, ph, down ? ACCENT : PANEL, down ? 0.6f : 1.f, 6.f);
+            beginPath();
+            roundedRect(px + 1.f, py + 1.f, pw - 2.f, ph - 2.f, 6.f);
+            strokeColor(armed ? ACCENT.r : EDGE.r, armed ? ACCENT.g : EDGE.g, armed ? ACCENT.b : EDGE.b, 255);
+            strokeWidth(armed ? 2.f : 1.f);
+            stroke();
+            std::string name = has ? hitNames[(size_t)k] : "-";
+            if (name.size() > 10)
+                name = name.substr(0, 9) + ".";
+            pixelText(px + pw / 2.f, py + ph / 2.f - 4.f, name.c_str(), has ? TEXT : FAINT, 1.f, 0);
+            std::string tag = ond::codeName(pads.code[ond::NBREAK + k]);
+            if (tag.empty() && pads.empty())
+                tag = "CH10 " + std::to_string(ond::PAD_A_FIRST + k);
+            pixelText(px + 8.f, py + 6.f, tag.empty() ? "HIT" : tag.c_str(), armed || learning ? ACCENT : FAINT);
+            hits.push_back({px, py, pw, ph, -5000 - k});
+        }
+        button(x0 + w - 14.f - side + 4.f, y0 + 36.f + (ph + gap) * 2.f, side - 4.f, ph / 2.f - 3.f, "HITS FOLDER", false, -28);
+        button(x0 + w - 14.f - side + 4.f, y0 + 36.f + (ph + gap) * 2.f + ph / 2.f + 3.f, side - 4.f, ph / 2.f - 3.f,
+               "RELOAD", false, -29);
     }
 
     // the layer (Clipper's LAYER): a second sound under the first (LAYER) or below a split (SPLIT), its octave,
@@ -993,6 +1035,9 @@ private:
     int learnArmed = -1;
     ond::PadMap pads;                      // the pads learned (Documents/Ond/pads.txt, and the set's)
     int padDown = -1;                      // the pad held with the mouse
+    int hitDown = -1;                      // the hit pad held with the mouse
+    std::vector<std::string> hitNames;     // Documents/Ond/Hits: the first eight WAV files
+    unsigned hitsReloads = 0;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OndUI)
 };

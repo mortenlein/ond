@@ -1512,6 +1512,10 @@ static void mix_block(int32_t *out, uint32_t n)
         mix_l[i] += wet_l[i];
         mix_r[i] += wet_r[i];
     }
+#if OND_HITS
+    ond_hits_mix(mix_l, mix_r, n);                      /* (Ond) Brudd's hits: one-shot samples into the mix, before DUST
+                                                         * and the breakers (host/ond_engine.c; not the FM-1's) */
+#endif
     dust_process(mix_l, mix_r, n);
     punch_process(mix_l, mix_r, n);
     djf_process(mix_l, mix_r, n);
