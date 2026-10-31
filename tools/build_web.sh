@@ -25,8 +25,13 @@ B="${OND_WEB_BUILD:-$HOME/.cache/ond-web-build}"
 emcmake cmake -S plugin -B "$B" -DCMAKE_BUILD_TYPE=Release >/dev/null
 cmake --build "$B" --target Ond-jack -j"$(nproc)"
 cp "$B"/bin/Ond.html "$B"/bin/Ond.js "$B"/bin/Ond.wasm build/web/ 2>/dev/null || cp "$B"/bin/Ond* build/web/
-# GPL: the source, linked from the page
-sed -i 's|  </body>|    <a href="https://github.com/mortenlein/ond" style="position:fixed;right:8px;bottom:6px;font:11px monospace;color:#777">Ond: GPL-3.0, source</a>\n  </body>|' build/web/Ond.html
+# Ond's own part of the page (plugin/web/ond-keys.html: the FM-1's keys, the fit to the screen, the source link)
+"$PY" - <<'PYEOF'
+p = 'build/web/Ond.html'
+s = open(p, encoding='utf-8').read()
+s = s.replace('  </body>', open('plugin/web/ond-keys.html', encoding='utf-8').read() + '  </body>', 1)
+open(p, 'w', encoding='utf-8').write(s)
+PYEOF
 # the release (docs/tasks/012-web.md: ashguard deploys the newest web-* release)
 V="${OND_WEB_VERSION:-0.$(grep -o 'd_version(0, [0-9]*' plugin/OndPlugin.cpp | grep -o '[0-9]*$')}"
 rm -f build/ond-web-*.zip*

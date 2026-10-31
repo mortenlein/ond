@@ -7,6 +7,18 @@
 #include "DistrhoPlugin.hpp"
 #include "OndEngineLoader.hpp"
 #include "OndLink.hpp"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+// The web page's own keys (plugin/web/ond-keys.html): one Ond a page, and its audio runs on the page's thread, so a
+// plain ring. 0x80..0xEF: MIDI; 0xF1 / 0xF2 d1: breaker d1 down / up (the FM-1's white keys, as its punch-in).
+static uint32_t webQ[256];
+static uint32_t webHead = 0, webTail = 0;
+extern "C" EMSCRIPTEN_KEEPALIVE void ond_web_in(int st, int d1, int d2)
+{
+    if (webHead - webTail < 256u)
+        webQ[webHead++ & 255u] = (uint32_t)(st & 255) | (uint32_t)(d1 & 255) << 8 | (uint32_t)(d2 & 255) << 16;
+}
+#endif
 #include "OndPresets.hpp"
 #include "OndShared.hpp"
 #include "Resampler.hpp"
@@ -68,7 +80,7 @@ protected:
     const char *getMaker() const override { return "Morten Lein"; }
     const char *getHomePage() const override { return "https://github.com/mortenlein/ond"; }
     const char *getLicense() const override { return "GPL-3.0-only"; }
-    uint32_t getVersion() const override { return d_version(0, 19, 0); }
+    uint32_t getVersion() const override { return d_version(0, 20, 0); }
 
     // "preset": the player's preset loaded on the screen (its name; "" a factory sound), kept with the Live set
     // so the screen shows it again. The sound itself is in the parameters.
@@ -283,6 +295,9 @@ protected:
                 eng.hit(h - 1, 100);
             hitNow = h;
         }
+#ifdef __EMSCRIPTEN__
+        webIn();
+#endif
         blockStart = frameNow;
         uint32_t done = 0, e = 0;
         while (done < frames) {
@@ -418,6 +433,11 @@ private:
                 eng.hit(b - ond::NBREAK, d2);
             return;
         }
+        padPress(b, press);
+    }
+
+    void padPress(int b, bool press)            // a breaker's pad down / up: the latest held plays
+    {
         for (int i = 0; i < padsHeld; ++i)       // (out of the stack wherever it is)
             if (padStack[i] == b) {
                 for (int k = i; k + 1 < padsHeld; ++k)
@@ -428,6 +448,22 @@ private:
         if (press && padsHeld < ond::NBREAK)
             padStack[padsHeld++] = b;
     }
+
+#ifdef __EMSCRIPTEN__
+    void webIn()                                // the page's keys (ond_web_in): notes as MIDI, breakers as pads
+    {
+        while (webTail != webHead) {
+            const uint32_t m = webQ[webTail++ & 255u];
+            const uint8_t st = m & 255u, d1 = (m >> 8) & 255u, d2 = (m >> 16) & 255u;
+            if (st == 0xF1u || st == 0xF2u) {
+                if (d1 < ond::NBREAK)
+                    padPress(d1, st == 0xF1u);
+            } else {
+                midiIn(st, d1, d2);
+            }
+        }
+    }
+#endif
 
     void updateBreaker()                        // the pads first, else the parameter (the screen, automation)
     {

@@ -1,0 +1,160 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only
+     Copyright (C) 2026 Morten Lein
+     Ond's web page, its own part (tools/build_web.sh puts it into DPF's page): the FM-1's keys under the screen
+     (27 keys, F3..G5, as the FM-1's, with its OCT - / OCT +), BRUDD (the 16 white keys are the 16 breakers, held,
+     as the FM-1's punch-in), and the page fitted to the screen: on a phone the browser lays the page out wide
+     enough for the screen and the keys (the viewport), so touches and the drawing stay in one scale. -->
+<style>
+  :root { --kb: 180px; --ks: 180px; }
+  #canvas_wrapper { bottom: var(--kb) !important; }
+  #ond-keys { position: fixed; left: 0; right: 0; bottom: 0; height: var(--kb); display: flex; gap: 8px;
+    padding: 8px 10px 10px; box-sizing: border-box; background: #111; touch-action: none; user-select: none;
+    -webkit-user-select: none; font: max(13px, calc(var(--ks) * 0.085)) ui-monospace, Menlo, Consolas, monospace; color: #9a958c; z-index: 1; }
+  #ond-ctl { display: flex; flex-direction: column; gap: 6px; width: max(132px, calc(var(--ks) * 0.9)); flex: none; }
+  #ond-ctl .row { display: flex; gap: 6px; flex: 1; }
+  #ond-ctl button { flex: 1; font: inherit; color: #d8d3c8; background: #26241f; border: 0; border-radius: 6px;
+    touch-action: none; }
+  #ond-ctl button.on { background: #e8a33d; color: #111; }
+  #ond-ctl .oct { text-align: center; line-height: 1.6; }
+  #ond-ctl a { color: #6b675f; font-size: 0.7em; text-align: center; }
+  #ond-kb { position: relative; flex: 1; }
+  #ond-keys.tall { flex-direction: column; }
+  #ond-keys.tall #ond-ctl { flex-direction: row; width: auto; height: calc(var(--ks) * 0.45); align-items: stretch; }
+  #ond-keys.tall #ond-ctl .row { flex: 2; }
+  #ond-keys.tall #ond-ctl .oct, #ond-keys.tall #ond-ctl a { flex: 1; align-self: center; }
+  .ok { position: absolute; box-sizing: border-box; border-radius: 0 0 6px 6px; display: flex; align-items: flex-end;
+    justify-content: center; padding-bottom: 6px; font-size: 0.85em; }
+  .ok.w { top: 0; bottom: 0; background: #d8d3c8; border: 1px solid #111; color: #6b675f; }
+  .ok.b { top: 0; height: 60%; background: #26241f; border: 1px solid #111; z-index: 1; color: #6b675f; }
+  .ok.w.down { background: #e8a33d; color: #111; }
+  .ok.b.down { background: #e8a33d; }
+  #ond-keys.brudd .ok.w { background: #3a2a14; color: #e8a33d; }
+  #ond-keys.brudd .ok.w.down { background: #e8a33d; color: #111; }
+</style>
+<div id="ond-keys">
+  <div id="ond-ctl">
+    <div class="row"><button id="ond-od">OCT -</button><button id="ond-ou">OCT +</button></div>
+    <div class="oct" id="ond-oct">OCT 0</div>
+    <div class="row"><button id="ond-brudd">BRUDD</button></div>
+    <a href="https://github.com/mortenlein/ond" target="_blank" rel="noopener">Ond: GPL-3.0, source</a>
+  </div>
+  <div id="ond-kb"></div>
+</div>
+<script>
+(function () {
+  var NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  var FIRST = 53, COUNT = 27;            // F3..G5, the FM-1's keys
+  var root = document.getElementById('ond-keys'), kb = document.getElementById('ond-kb');
+  var oct = 0, brudd = false, keys = [], whites = [];
+  var held = {};                         // pointer id -> {key, msg}
+
+  function send(st, d1, d2) {
+    var f = window._ond_web_in || (window.Module && Module._ond_web_in);
+    if (f) f(st, d1, d2);
+  }
+  function wake() {                      // browsers start audio only on a touch or click
+    var wab = window.Module && Module.WebAudioBridge;
+    if (wab && wab.audioContext && wab.audioContext.state !== 'running') wab.audioContext.resume();
+  }
+
+  // the keys: white ones side by side, black ones over their gaps
+  for (var i = 0; i < COUNT; ++i) {
+    var n = FIRST + i, black = NAMES[n % 12].length > 1;
+    var el = document.createElement('div');
+    el.className = 'ok ' + (black ? 'b' : 'w');
+    el.dataset.i = i;
+    keys.push({ el: el, i: i, black: black, white: black ? -1 : whites.length, down: 0 });
+    if (!black) whites.push(i);
+    kb.appendChild(el);
+  }
+  var ww = 100 / whites.length;
+  keys.forEach(function (k) {
+    if (!k.black) {
+      k.el.style.left = (k.white * ww) + '%';
+      k.el.style.width = ww + '%';
+    } else {
+      var left = keys[k.i - 1].white + 1; // the white key to its right starts here
+      k.el.style.left = (left * ww - ww * 0.32) + '%';
+      k.el.style.width = (ww * 0.64) + '%';
+    }
+  });
+  function label() {
+    keys.forEach(function (k) {
+      var n = FIRST + k.i + 12 * oct;
+      k.el.textContent = brudd && !k.black ? String(k.white + 1) : (k.black ? '' : NAMES[n % 12] + (Math.floor(n / 12) - 1));
+    });
+    document.getElementById('ond-oct').textContent = 'OCT ' + (oct > 0 ? '+' : '') + oct;
+    root.classList.toggle('brudd', brudd);
+    document.getElementById('ond-brudd').classList.toggle('on', brudd);
+  }
+  label();
+
+  function keyAt(x, y) {
+    var el = document.elementFromPoint(x, y);
+    return el && el.parentElement === kb ? keys[+el.dataset.i] : null;
+  }
+  function press(k) {                    // what this key sends now (kept: its release sends the matching off)
+    var msg = brudd && !k.black ? [0xF1, k.white, 0xF2] : [0x90, FIRST + k.i + 12 * oct, 0x80];
+    send(msg[0], msg[1], 100);
+    if (++k.down === 1) k.el.classList.add('down');
+    return msg;
+  }
+  function release(h) {
+    send(h.msg[2], h.msg[1], 0);
+    if (--h.key.down === 0) h.key.el.classList.remove('down');
+  }
+  kb.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    wake();
+    var k = keyAt(e.clientX, e.clientY);
+    if (!k) return;
+    kb.setPointerCapture(e.pointerId);
+    held[e.pointerId] = { key: k, msg: press(k) };
+  });
+  kb.addEventListener('pointermove', function (e) {     // a finger sliding: key to key
+    var h = held[e.pointerId];
+    if (!h) return;
+    var k = keyAt(e.clientX, e.clientY);
+    if (!k || k === h.key) return;
+    release(h);
+    held[e.pointerId] = { key: k, msg: press(k) };
+  });
+  function up(e) {
+    var h = held[e.pointerId];
+    if (!h) return;
+    release(h);
+    delete held[e.pointerId];
+  }
+  kb.addEventListener('pointerup', up);
+  kb.addEventListener('pointercancel', up);
+  function tap(id, f) {
+    document.getElementById(id).addEventListener('pointerdown', function (e) { e.preventDefault(); wake(); f(); label(); });
+  }
+  tap('ond-od', function () { oct = Math.max(-3, oct - 1); });
+  tap('ond-ou', function () { oct = Math.min(3, oct + 1); });
+  tap('ond-brudd', function () { brudd = !brudd; });
+
+  // the fit: the screen (1000 x 700) above the keys. On a phone the page is laid out wide enough for both and the
+  // browser scales it to the glass; on a computer the window is what it is.
+  var meta = document.querySelector('meta[name=viewport]'), last = '';
+  function fit() {
+    var touch = matchMedia('(pointer: coarse)').matches;
+    var r = innerWidth / innerHeight, k;
+    if (touch) {
+      var w = r > 1 ? Math.max(1010, 900 * r) : 1010;
+      var h = w / r;
+      k = r > 1 ? h - 705 : Math.max(220, Math.min(h - 720, h * 0.42));
+      var c = 'width=' + Math.round(w) + ', user-scalable=no';
+      if (c !== last) { meta.setAttribute('content', c); last = c; }
+    } else {
+      k = Math.max(150, Math.min(220, innerHeight - 705));
+    }
+    document.documentElement.style.setProperty('--kb', Math.round(k) + 'px');
+    document.documentElement.style.setProperty('--ks', Math.round(Math.min(k, 200)) + 'px');
+    root.classList.toggle('tall', touch && r <= 1);
+  }
+  fit();
+  addEventListener('resize', fit);
+  addEventListener('orientationchange', function () { last = ''; meta.setAttribute('content', 'width=device-width'); setTimeout(fit, 300); });
+})();
+</script>
