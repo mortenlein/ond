@@ -56,6 +56,11 @@ Ond made up becomes an ordinary Live clip:
 **First time, check in Live** (Ond cannot see this from inside): does the second track's "MIDI From" list show
 Ond, and does recording put notes 16–31 in the clip? If not, tell Claude what the list shows.
 
+**Or without routing: SAVE MIDI** (BEAT view) writes 8 bars of the beat as it plays (the groove, BARS, FILL, the
+parts in, the drummer's timing at DRUNK) to `Documents\Ond\Beats\<feel> <groove> drummer<n>.mid`. BEATS FOLDER
+opens it: drag the file onto Ond's track in Live, FEEL OFF. (Checked: the same notes and velocities as BEAT plays,
+within 1.4 ms.)
+
 BEAT's PLAY (in its view) runs the beat with Live stopped, on Ond's own time at Live's tempo; Live's play always
 takes over. The status line says which.
 

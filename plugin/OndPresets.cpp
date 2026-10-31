@@ -291,6 +291,74 @@ void openKitFolder()
 #endif
 }
 
+fs::path beatsDir()
+{
+    fs::path d = presetDir().parent_path() / "Beats";
+    std::error_code ec;
+    fs::create_directories(d, ec);
+    return d;
+}
+
+std::string saveBeatMidi(const std::string &name, int bars, const uint8_t (*vel)[16][16], const int8_t (*micro)[16],
+                         double bpm)
+{
+    const int Q = 480, STEP = Q / 4, LEN = Q / 8;   // a 16th 120 ticks; each note a 32nd long
+    struct Ev { int t; uint8_t st, a, b; };
+    std::vector<Ev> ev;
+    for (int bar = 0; bar < bars; ++bar)
+        for (int s = 0; s < 16; ++s) {
+            const int t = (bar * 16 + s) * STEP + (micro[bar][s] * STEP + (micro[bar][s] >= 0 ? 32 : -32)) / 64;
+            for (int l = 0; l < 16; ++l)
+                if (vel[bar][s][l]) {
+                    ev.push_back({t < 0 ? 0 : t, 0x90, (uint8_t)(16 + l), vel[bar][s][l]});
+                    ev.push_back({(t < 0 ? 0 : t) + LEN, 0x80, (uint8_t)(16 + l), 0});
+                }
+        }
+    std::stable_sort(ev.begin(), ev.end(), [](const Ev &x, const Ev &y) { return x.t < y.t || (x.t == y.t && x.st < y.st); });
+    std::vector<uint8_t> trk;
+    auto vlq = [&](uint32_t v) {
+        uint8_t b[5];
+        int n = 0;
+        b[n++] = v & 0x7F;
+        while (v >>= 7)
+            b[n++] = (uint8_t)(0x80 | (v & 0x7F));
+        while (n)
+            trk.push_back(b[--n]);
+    };
+    const uint32_t us = (uint32_t)(60000000.0 / (bpm > 0 ? bpm : 90.0));
+    vlq(0), trk.insert(trk.end(), {0xFF, 0x51, 0x03, (uint8_t)(us >> 16), (uint8_t)(us >> 8), (uint8_t)us});
+    vlq(0), trk.insert(trk.end(), {0xFF, 0x58, 0x04, 4, 2, 24, 8});   // 4/4
+    int last = 0;
+    for (const Ev &e : ev) {
+        vlq((uint32_t)(e.t - last));
+        last = e.t;
+        trk.push_back(e.st), trk.push_back(e.a), trk.push_back(e.b);
+    }
+    vlq((uint32_t)(bars * 16 * STEP - last > 0 ? bars * 16 * STEP - last : 0));   // (the clip's length: whole bars)
+    trk.insert(trk.end(), {0xFF, 0x2F, 0x00});
+    std::string free = fileStem(name);
+    for (int i = 2; i < 1000; ++i) {
+        std::error_code ec;
+        if (!fs::exists(beatsDir() / fs::u8path(free + ".mid"), ec))
+            break;
+        free = fileStem(name) + " " + std::to_string(i);
+    }
+    std::ofstream f(beatsDir() / fs::u8path(free + ".mid"), std::ios::binary | std::ios::trunc);
+    const uint8_t hdr[] = {'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 0, 0, 1, (uint8_t)(Q >> 8), (uint8_t)Q,
+                           'M', 'T', 'r', 'k', (uint8_t)(trk.size() >> 24), (uint8_t)(trk.size() >> 16),
+                           (uint8_t)(trk.size() >> 8), (uint8_t)trk.size()};
+    f.write((const char *)hdr, sizeof hdr);
+    f.write((const char *)trk.data(), (std::streamsize)trk.size());
+    return f ? free : std::string();
+}
+
+void openBeatsFolder()
+{
+#ifdef _WIN32
+    ShellExecuteW(nullptr, L"open", beatsDir().wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+#endif
+}
+
 void openHitsFolder()
 {
 #ifdef _WIN32

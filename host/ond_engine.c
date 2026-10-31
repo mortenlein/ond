@@ -668,6 +668,44 @@ void ond_hit(int slot, int velocity)
     slot_play((uint32_t)slot, v * v * 2);               /* (127: 32258, Q15) */
 }
 
+int ond_beat_bar(const int *v, int bar, uint8_t vel[16][16], int8_t micro[16])
+{
+    const ond_groove_t *g = 0;
+    const ond_gstep_t *src;
+    int feel, i, l, n = 0, k, nb, every, c;
+    int key[5];                                     /* feel groove drunk bars fill */
+    uint16_t out = 0;
+    for (i = 0; i < 5; i++)
+        key[i] = v[i];
+    for (c = 0; c < 7; c++)
+        if (!v[5 + c])
+            out |= PART_LANES[c];
+    feel = key[0];
+    memset(vel, 0, 16 * 16);
+    memset(micro, 0, 16);
+    if (feel < 1 || feel > OND_NFEELS)
+        return 0;
+    for (i = 0; i < OND_NGROOVES; i++)
+        n += OND_GROOVES[i].feel == (uint32_t)(feel - 1);
+    if (!n)
+        return 0;
+    k = (key[1] > 0 ? key[1] - 1 : 0) % n;
+    for (i = 0; i < OND_NGROOVES && !g; i++)
+        if (OND_GROOVES[i].feel == (uint32_t)(feel - 1) && !k--)
+            g = &OND_GROOVES[i];
+    nb = key[3] ? g->nbars : 2;
+    every = key[4] == 1 ? 4 : key[4] == 2 ? 8 : 0;
+    src = every && g->has_fill && bar % every == every - 1 ? g->fill : g->s + 16 * (bar % nb);
+    for (i = 0; i < 16; i++) {                       /* (as beat_write: the parts out empty, DRUNK on the nudge) */
+        int32_t m = (src[i].micro * key[2] + (src[i].micro >= 0 ? 50 : -50)) / 100;
+        micro[i] = (int8_t)(m < MICRO_MIN ? MICRO_MIN : m > MICRO_MAX ? MICRO_MAX : m);
+        for (l = 0; l < 16; l++)
+            if ((src[i].on >> l) & 1u && !((out >> l) & 1u))
+                vel[i][l] = (uint8_t)lvl_vel((src[i].lvl >> (2u * l)) & 3u, 100);
+    }
+    return 1;
+}
+
 void ond_render(float *l, float *r, uint32_t n)
 {
     int32_t o[2 * CTL];

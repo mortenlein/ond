@@ -191,6 +191,10 @@ protected:
                     setValue(p, vals[(size_t)p] >= 0.5f ? 0.f : 1.f);
                     touch();
                 }
+            } else if (h.param == -37) {
+                saveMidi();
+            } else if (h.param == -38) {
+                ond::openBeatsFolder();
             } else if (h.param == -35) {
                 ond::openKitFolder();
             } else if (h.param == -36) {
@@ -704,7 +708,7 @@ private:
         const float db = m > 1e-5f ? 20.f * std::log10(m) : -100.f, k = std::fmax(0.f, std::fmin(1.f, (db + 60.f) / 60.f));
         if (k > 0.f)
             fill(bx + 4.f, by + bh - 3.f, (bw - 8.f) * k, 2.f, db > -6.f ? ACCENT : TEXT, db > -6.f ? 1.f : 0.5f, 1.f);
-        pixelText(24.f, 60.f, "0.15", FAINT);
+        pixelText(24.f, 60.f, "0.16", FAINT);
         if (renaming)
             pixelText(bx + bw, by + bh + 6.f, "TYPE A NAME, ENTER", FAINT, 1.f, 1);
     }
@@ -827,6 +831,7 @@ private:
         }
     }
 
+    static constexpr const char *N_FEEL_UI[5] = {"off", "hiphop", "funk", "soul", "jazz"};
     static constexpr const char *PART_KEYS[7] = {"beat_kick", "beat_snare", "beat_rim", "beat_hats", "beat_cymbals",
                                                  "beat_toms", "beat_perc"};
     static constexpr const char *PART_NAMES[7] = {"KICK", "SNARE", "RIM", "HATS", "CYMBALS", "TOMS", "PERC"};
@@ -856,6 +861,36 @@ private:
                 return &OND_GROOVES[i];
         return nullptr;
     }
+    void saveMidi()                        // SAVE MIDI: 8 bars as they play, to drag into a Live clip
+    {
+        static uint8_t vel[8][16][16];
+        static int8_t micro[8][16];
+        const ond_groove_t *g = grooveNow();
+        if (!g)
+            return;
+        static const char *const KEYS[12] = {"beat_feel", "beat_groove", "beat_drunk", "beat_bars", "beat_fill",
+                                             "beat_kick", "beat_snare", "beat_rim", "beat_hats", "beat_cymbals",
+                                             "beat_toms", "beat_perc"};
+        int v[12];
+        for (int i = 0; i < 12; ++i) {           // the screen's values (the host's), not the engine's copy
+            const int p = ond::paramOfKey(KEYS[i]);
+            v[i] = p >= 0 ? (int)std::lround(vals[(size_t)p]) : 0;
+        }
+        for (int b = 0; b < 8; ++b)
+            ond_beat_bar(v, b, vel[b], micro[b]);
+        char name[64];
+        std::snprintf(name, sizeof name, "%s %u drummer%u", N_FEEL_UI[(g->feel + 1) % 5], (unsigned)(grooveIndex()),
+                      (unsigned)g->drummer);
+        savedMidi = ond::saveBeatMidi(name, 8, vel, micro, getTempo());
+        repaint();
+    }
+    int grooveIndex() const
+    {
+        const int pg = ond::paramOfKey("beat_groove");
+        return pg >= 0 ? (int)std::lround(vals[(size_t)pg]) : 1;
+    }
+    double getTempo() const { return 90.0; }   // (the file's tempo meta: Live takes the clip at its own)
+
     void newGroove()                       // NEW: another of the feel's grooves (a feel off: HIP HOP first)
     {
         const int pf = ond::paramOfKey("beat_feel"), pg = ond::paramOfKey("beat_groove");
@@ -888,6 +923,8 @@ private:
                                        : "WAITING: PRESS PLAY HERE OR IN LIVE";
             pixelText(x0 + w - 14.f, y0 + 10.f, st, tr && beatOn() ? ACCENT : DIM, 1.f, 1);
             button(x0 + w - 14.f - 250.f, y0 + 40.f, 120.f, 34.f, own ? "STOP" : "PLAY", own, -34);
+            button(x0 + w - 14.f - 390.f, y0 + 40.f, 130.f, 34.f, "SAVE MIDI", false, -37);
+            button(x0 + w - 14.f - 530.f, y0 + 40.f, 130.f, 34.f, "BEATS FOLDER", false, -38);
         }
         const ond_groove_t *g = grooveNow();
         char info[96];
@@ -897,6 +934,8 @@ private:
         else
             std::snprintf(info, sizeof info, "OFF: PICK A FEEL, OR PRESS NEW");
         pixelText(x0 + 14.f, y0 + 48.f, info, g ? TEXT : DIM, 1.f);
+        if (!savedMidi.empty())                 // (the last SAVE MIDI: where to drag it from)
+            pixelText(x0 + 14.f, y0 + 72.f, ("SAVED: BEATS\\" + savedMidi + ".MID - DRAG IT INTO LIVE").c_str(), ACCENT);
         button(x0 + w - 14.f - 120.f, y0 + 40.f, 120.f, 34.f, "NEW", false, -33);
         static const char *const KEYS[] = {"beat_feel", "beat_groove", "beat_bars", "beat_fill", "beat_drunk",
                                            "beat_kit", "beat_tone", "beat_pump", "beat_level"};
@@ -1182,6 +1221,7 @@ private:
     std::vector<std::string> hitNames;     // Documents/Ond/Hits: the first eight WAV files
     unsigned hitsReloads = 0;
     bool kitHas[16] = {};
+    std::string savedMidi;                 // the last SAVE MIDI's file name
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OndUI)
 };

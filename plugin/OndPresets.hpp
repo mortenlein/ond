@@ -36,6 +36,11 @@ void openHitsFolder();
 extern const char *const KIT_FILES[16];
 bool loadKitLane(int lane, std::vector<float> &l, std::vector<float> &r);   // false: no file (or not a WAV)
 void openKitFolder();
+// SAVE MIDI: `bars` bars of BEAT (vel[bar][16th][lane], micro[bar][16th] in 1/64 of a 16th) as a MIDI file in
+// Documents/Ond/Beats/<name>.mid (a free name), notes 16..31 (Ond's drum notes); returns the file's name, "" failed
+std::string saveBeatMidi(const std::string &name, int bars, const uint8_t (*vel)[16][16], const int8_t (*micro)[16],
+                         double bpm);
+void openBeatsFolder();
 
 // the pads learned for Brudd, for every Live set: Documents/Ond/pads.txt (OndShared.hpp PadMap's text)
 std::string loadPadsText();

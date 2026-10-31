@@ -128,3 +128,9 @@ FM-1 build unchanged, hostsim byte-identical. Next: 6b, the beat's own dusty bus
 The drum track's own SLOOP filter (P_TFLT, fx.c djf) as BEAT's TONE, default OFF. Measured: −50 cuts 24 dB above
 4 kHz, the rest untouched. A DUST of the beat's own is held: it needs dust_process to run twice (a second state),
 a change to Clipper's DUST — Morten first.
+
+## Step 8 (2026-10-31, Ond 0.16): SAVE MIDI
+
+`ond_beat_bar` (pure: the tables and the screen's values) gives each bar as BEAT plays it; the screen writes 8 bars
+as a type-0 MIDI file (480 a quarter, notes 16–31, a 32nd long) to `Documents/Ond/Beats`. Checked against BEAT's
+own MIDI out playing the same groove: the same 105 notes and velocities in 4 bars, within 1.4 ms.
