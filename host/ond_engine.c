@@ -74,6 +74,7 @@ static void fm1_delay_ms(uint32_t ms) { (void)ms; }
 #include "../firmware/src/arranger.c"
 #endif
 #include "../firmware/src/seq.c"
+#include "ond_grooves.h"                /* BEAT's grooves: real drummers (tools/gen_grooves.py, Groove MIDI Dataset) */
 
 /* a factory preset's sound parameters as ui.c apply_preset_to sets them (the sound to its defaults first; sends,
  * arp, voice mode; delay and reverb dry, Clipper 1.0). Pure: no voice, no state touched */
@@ -131,28 +132,37 @@ static void layer_into(uint32_t e, uint32_t pi)
         trk[1].p[LAYER_OWN[i]] = keep[i];
 }
 
-/* BEAT's pattern into the drum track (task 015 step 1: OFF, or TEST: kick 1 and 3, snare 2 and 4, closed hat on
- * the 8ths, a 16-step bar: the plumbing's check, not a groove; the real ones come from drummers, step 2) */
+/* BEAT's pattern into the drum track: OFF (empty), or a drummer's two bars (ond_grooves.h): FEEL picks the style,
+ * GROOVE which of its grooves (round its count), DRUNK how much of the drummer's timing (each step's nudge, scaled) */
 static void beat_init(void);
-static void beat_feel(int feel)
+static void beat_pattern(int feel, int groove, int drunk)
 {
     track_t *t = TDRUM;
-    uint32_t i;
+    uint32_t i, n = 0, k;
+    const ond_groove_t *g = 0;
     for (i = 0; i < NSTEP; i++) {
         memset(&t->dstep[i], 0, sizeof t->dstep[i]);
         t->micro[i] = 0;
     }
-    t->p[P_SLEN] = 16;
-    t->p[P_SDIV] = 2;                           /* 1/16 */
-    if (feel != 1)
+    t->p[P_SLEN] = 32;                          /* two bars of 1/16 */
+    t->p[P_SDIV] = 2;
+    if (feel < 1 || feel > OND_NFEELS)
         return;
-    for (i = 0; i < 16u; i++) {
-        if (i % 8u == 0u)
-            dstep_set(&t->dstep[i], 0, LV_NORM, 0);   /* kick */
-        if (i % 8u == 4u)
-            dstep_set(&t->dstep[i], 2, LV_NORM, 0);   /* snare */
-        if (i % 2u == 0u)
-            dstep_set(&t->dstep[i], 4, i % 4u ? LV_SOFT : LV_NORM, 0);   /* hat */
+    for (i = 0; i < OND_NGROOVES; i++)
+        n += OND_GROOVES[i].feel == (uint32_t)(feel - 1);
+    if (!n)
+        return;
+    k = (uint32_t)(groove > 0 ? groove - 1 : 0) % n;
+    for (i = 0; i < OND_NGROOVES && !g; i++)
+        if (OND_GROOVES[i].feel == (uint32_t)(feel - 1) && !k--)
+            g = &OND_GROOVES[i];
+    for (i = 0; i < 32u; i++) {
+        uint32_t l;
+        int32_t m = (g->s[i].micro * drunk + (g->s[i].micro >= 0 ? 50 : -50)) / 100;
+        for (l = 0; l < DRUM_LANES; l++)
+            if ((g->s[i].on >> l) & 1u)
+                dstep_set(&t->dstep[i], l, (g->s[i].lvl >> (2u * l)) & 3u, 0);
+        t->micro[i] = (int8_t)(m < MICRO_MIN ? MICRO_MIN : m > MICRO_MAX ? MICRO_MAX : m);
     }
 }
 
@@ -263,24 +273,30 @@ static const param_desc_t LY_FILT_D = {"FILT", F_FILT, -64, 63, 0, 0, 0};
 /* Brudd (Ond's own): CATCH, how long a let-go breaker fights its way back (ms; the SL-1200's 0.7 s at 700), LAND,
  * the grid its return waits for (the plugin holds it till then) */
 static const char *const N_LAND[] = {"OFF", "1/16", "1/8", "1/4"};
-/* BEAT (task 015): FEEL (OFF, TEST: the plumbing's check, not a groove), KIT (the drum track's: SLOOP's synthesised
- * kits; DRUM_KIT_NAMES), LEVEL (its own: drums.c DR_LVL) */
-static const char *const N_FEEL[] = {"OFF", "TEST"};
-static const param_desc_t FEEL_D = {"FEEL", F_ENUM, 0, 1, 0, N_FEEL, 0};
+/* BEAT (task 015): FEEL (OFF, or a style of the drummers': ond_grooves.h), GROOVE (which of that style's), DRUNK (how
+ * much of the drummer's own timing: 0 on the grid, 100 as played, more looser still), KIT (the drum track's: SLOOP's
+ * synthesised kits; DRUM_KIT_NAMES), LEVEL (its own: drums.c DR_LVL) */
+static const char *const N_FEEL[OND_NFEELS + 1] = {"OFF", "HIP HOP", "FUNK", "SOUL", "JAZZ"};
+_Static_assert(OND_NFEELS == 4, "N_FEEL: OND_FEEL_NAMES (tools/gen_grooves.py FEELS)");
+static const param_desc_t FEEL_D = {"FEEL", F_ENUM, 0, OND_NFEELS, 0, N_FEEL, 0};
+static const param_desc_t GROOVE_D = {"GROOV", F_INT, 1, 32, 1, 0, 0};
+static const param_desc_t DRUNK_D = {"DRUNK", F_INT, 0, 200, 100, 0, "%"};
 static const param_desc_t KIT_D = {"KIT", F_ENUM, DRUM_SAMPLED, DRUM_SAMPLED + DS_NKITS - 1, DRUM_SAMPLED + 8,
                                    DRUM_KIT_NAMES, 0};   /* (the 32 synthesised kits; LO-FI first) */
 static const param_desc_t BLVL_D = {"LEVEL", F_PCT, 0, 127, 100, 0, 0};
 static const param_desc_t CATCH_D = {"CATCH", F_INT, 0, 1000, 0, 0, "ms"};
 static const param_desc_t LAND_D = {"LAND", F_ENUM, 0, 3, 0, N_LAND, 0};
-static int16_t host_val[4];                    /* CATCH, LAND, FEEL, (beat LEVEL: drums.c's own) */
-static void beat_feel(int feel);
+static int16_t host_val[8];                    /* CATCH, LAND, FEEL, (beat LEVEL: drums.c's own), -, GROOVE, DRUNK */
+static void beat_load(void) { beat_pattern(host_val[2], host_val[5], host_val[6]); }
 static void beat_init(void)
 {
     TDRUM->p[P_E0] = (int16_t)KIT_D.def;
     ond_beat_lvl = 100;
     host_val[2] = 0;
     host_val[3] = 100;
-    beat_feel(0);
+    host_val[5] = 1;
+    host_val[6] = 100;
+    beat_load();
 }
 static const ctl_t CTL_TAB[] = {
     {"brite", "MACROS", OND_SCOPE_SOUND, P_MAC1, 0},
@@ -340,6 +356,8 @@ static const ctl_t CTL_TAB[] = {
     {"beat_feel", "BEAT", OND_SCOPE_HOST, 2, 1, &FEEL_D},                /* (Ond 0.9) */
     {"beat_kit", "BEAT", OND_SCOPE_HOST, 4, 1, &KIT_D},
     {"beat_level", "BEAT", OND_SCOPE_HOST, 3, 1, &BLVL_D},
+    {"beat_groove", "BEAT", OND_SCOPE_HOST, 5, 1, &GROOVE_D},
+    {"beat_drunk", "BEAT", OND_SCOPE_HOST, 6, 1, &DRUNK_D},
 };
 
 static const param_desc_t *ctl_desc(int c, int engine)
@@ -390,8 +408,8 @@ void ond_control_set(int c, int v)
         host_val[k->id] = (int16_t)v;
         if (k->id == 0)
             ond_breaker_catch(v);
-        if (k->id == 2)
-            beat_feel(v);
+        if (k->id == 2 || k->id == 5 || k->id == 6)
+            beat_load();                        /* FEEL, GROOVE, DRUNK: the pattern again */
         if (k->id == 3)
             ond_beat_lvl = (int16_t)v;
     } else

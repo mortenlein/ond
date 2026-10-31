@@ -299,7 +299,8 @@ private:
             {"level", "Level"}, {"layer_mode", "Layer Mode"}, {"layer_oct", "Layer Octave"},
             {"layer_split", "Layer Split"}, {"layer_level", "Layer Level"}, {"layer_pan", "Layer Pan"},
             {"layer_filter", "Layer Filter"}, {"catch", "Catch"}, {"land", "Land"}, {"beat_feel", "Beat Feel"},
-            {"beat_kit", "Beat Kit"}, {"beat_level", "Beat Level"}};
+            {"beat_kit", "Beat Kit"}, {"beat_level", "Beat Level"}, {"beat_groove", "Beat Groove"},
+            {"beat_drunk", "Beat Drunk"}};
         for (const auto &n : N)
             if (!std::strcmp(n[0], key))
                 return n[1];

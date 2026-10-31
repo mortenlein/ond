@@ -84,3 +84,10 @@ half-time, brushes), with timing from the dataset only.
 engine at its five gates: the render (`fx.c`), the drum track's steps (`seq.c`), its note-on (`voice.c`), its
 "only track 1 sounds" (`core.h trk_silent`), and its level and sends (`drums.c DR_*`: Clipper's slots of those
 are the master EQ). Controls: FEEL (OFF / TEST), KIT (SLOOP's 32), LEVEL. hostsim's baseline byte-identical.
+
+## Step 2 (2026-10-31): the grooves — `refs/015-2/`
+
+`tools/gen_grooves.py` → `host/ond_grooves.h` (committed): 76 two-bar grooves from the Groove MIDI Dataset's 4/4
+beats at 65–100 BPM (HIP HOP 26, FUNK 32, SOUL 11, JAZZ 7), each the two bars that repeat best (most 90–100 %).
+FEEL / GROOVE / DRUNK in the engine (DRUNK, step 4's, came with it: it is how the timing is applied). Credited in
+`LICENSING.md`. The dataset itself is not in the repo (`C:\deveposeference\groove`, CC BY 4.0).

@@ -70,3 +70,10 @@ by those owners.
 ## Radio
 
 Felucca never enables the Bluetooth / Wi-Fi radio of the hardware.
+
+## Ond: data from others
+
+- `host/ond_grooves.h` (BEAT's grooves) is made by `tools/gen_grooves.py` from the **Groove MIDI Dataset**:
+  Jon Gillick, Adam Roberts, Jesse Engel, Mikhail Tikhonov et al., "Learning to Groove with Inverse Sequence
+  Transformations", ICML 2019; Google Magenta, **CC BY 4.0** (magenta.tensorflow.org/datasets/groove). Two-bar
+  excerpts of its 4/4 hip-hop, funk, soul and jazz beats, mapped to SLOOP's drum lanes, levels and nudges.
