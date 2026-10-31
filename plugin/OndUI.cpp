@@ -5,6 +5,7 @@
 // param_format, ond_control_text), drawn in the FM-1's own pixel font (Terminus, build/gen/felucca_font.h).
 #include "DistrhoUI.hpp"
 #include "OndPresets.hpp"
+#include "OndLink.hpp"
 #include "OndShared.hpp"
 #include "ond_grooves.h"
 #include <algorithm>
@@ -135,6 +136,8 @@ protected:
             drawLayer();
         if (view == 3 && !browserOpen)
             drawBeat();
+        if (view == 4 && !browserOpen)
+            drawLink();
         restore();
     }
 
@@ -205,8 +208,8 @@ protected:
                 setState("hits", n);                 // (the plugin reads the hits and the kit again)
             } else if (h.param == -34) {
                 setValue(ond::playParam(), vals[(size_t)ond::playParam()] >= 0.5f ? 0.f : 1.f);
-            } else if (h.param == -22 || h.param == -24 || h.param == -32) {
-                const int v = h.param == -22 ? 1 : h.param == -24 ? 2 : 3;
+            } else if (h.param == -22 || h.param == -24 || h.param == -32 || h.param == -39) {
+                const int v = h.param == -22 ? 1 : h.param == -24 ? 2 : h.param == -32 ? 3 : 4;
                 view = view == v ? 0 : v;
                 learning = false, learnArmed = -1;
             } else if (h.param == -25 || h.param == -26) {
@@ -678,7 +681,7 @@ private:
     {
         pixelText(24.f, 12.f, "OND", TEXT, 3.f);
         const ond::Sound &s = ond::sounds()[(size_t)soundIndex()];
-        const float bx = 140.f, bw = 480.f, by = 12.f, bh = 52.f;
+        const float bx = 140.f, bw = 430.f, by = 12.f, bh = 52.f;
         fill(bx, by, bw, bh, PANEL, 1.f, 4.f);
         pixelText(bx + 18.f, by + 18.f, "<", DIM, 1.f, 0);
         pixelText(bx + bw - 18.f, by + 18.f, ">", DIM, 1.f, 0);
@@ -698,17 +701,18 @@ private:
         const float tw = pixelText(bx + 44.f, by + 19.f, name.c_str(), nc, 2.f);
         if (renaming)                      // the cursor
             fill(bx + 44.f + tw + 2.f, by + 19.f, 3.f, 30.f, ACCENT);
-        button(630.f, by, 56.f, bh, "SAVE", !userName.empty() && modified, -20);
-        button(690.f, by, 76.f, bh, "SAVE AS", false, -21);
-        button(770.f, by, 66.f, bh, "LAYER", view == 2 || layerOn(), -24);
-        button(840.f, by, 66.f, bh, "BRUDD", view == 1, -22);
-        button(910.f, by, 66.f, bh, "BEAT", view == 3 || beatOn(), -32);
+        button(578.f, by, 54.f, bh, "SAVE", !userName.empty() && modified, -20);
+        button(636.f, by, 72.f, bh, "SAVE AS", false, -21);
+        button(712.f, by, 64.f, bh, "LAYER", view == 2 || layerOn(), -24);
+        button(780.f, by, 64.f, bh, "BRUDD", view == 1, -22);
+        button(848.f, by, 62.f, bh, "BEAT", view == 3 || beatOn(), -32);
+        button(914.f, by, 62.f, bh, "LINK", view == 4, -39);
         // the output: a line under the name that breathes with the sound
         const float m = vals[(size_t)ond::meterParam()];
         const float db = m > 1e-5f ? 20.f * std::log10(m) : -100.f, k = std::fmax(0.f, std::fmin(1.f, (db + 60.f) / 60.f));
         if (k > 0.f)
             fill(bx + 4.f, by + bh - 3.f, (bw - 8.f) * k, 2.f, db > -6.f ? ACCENT : TEXT, db > -6.f ? 1.f : 0.5f, 1.f);
-        pixelText(24.f, 60.f, "0.18", FAINT);
+        pixelText(24.f, 60.f, "0.19", FAINT);
         if (renaming)
             pixelText(bx + bw, by + bh + 6.f, "TYPE A NAME, ENTER", FAINT, 1.f, 1);
     }
@@ -969,6 +973,44 @@ private:
         }
         pixelText(x0 + 14.f, y0 + h - 44.f, "OUT AS MIDI NOTES 16-31: RECORD THEM ON A TRACK, 'MIDI FROM: OND'. A CLIP'S 16-31 PLAY THE KIT.", FAINT);
         pixelText(x0 + 14.f, y0 + h - 26.f, "GROOVE MIDI DATASET (GOOGLE MAGENTA, CC BY 4.0). KITS: SLOOP'S.", FAINT);
+    }
+
+    // LINK: the Onds of this set hear each other (OndLink.hpp)
+    void drawLink()
+    {
+        const float x0 = 16.f, y0 = 336.f, w = 968.f, h = 348.f;
+        auto &hub = ond::LinkHub::get();
+        fill(x0, y0, w, h, PANEL, 1.f, 6.f);
+        pixelText(x0 + 14.f, y0 + 10.f, "LINK", DIM);
+        char line[96];
+        std::snprintf(line, sizeof line, "ONDS IN THIS SET: %d", hub.count());
+        pixelText(x0 + w - 14.f, y0 + 10.f, line, hub.count() > 1 ? ACCENT : DIM, 1.f, 1);
+        int beats = 0, low = 128;
+        for (const auto &s : hub.slot) {        // what the others offer now (this Ond's own slot counts too: rough)
+            beats += s.owner.load() && s.beatOn.load();
+            for (int wd = 0; wd < 4; ++wd)
+                for (int b = 0; b < 32; ++b)
+                    if ((s.notes[wd].load() >> b) & 1u && wd * 32 + b < low)
+                        low = wd * 32 + b;
+        }
+        static const char *const NN[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+        std::snprintf(line, sizeof line, "BEATS PLAYING: %d   LOWEST KEY HELD IN ANY OND: %s", beats,
+                      low < 128 ? (std::string(NN[low % 12]) + std::to_string(low / 12 - 2)).c_str() : "-");
+        pixelText(x0 + 14.f, y0 + 40.f, line, TEXT);
+        pixelText(x0 + 14.f, y0 + 62.f, "WEAR: ADDS TO DUST. SHARE ON: MOVING IT HERE MOVES EVERY LINKED OND.", FAINT);
+        pixelText(x0 + 14.f, y0 + 80.f, "PUMP ON: ANOTHER OND'S BEAT DUCKS THIS ONE (AS DEEP AS ITS OWN PUMP, BEAT VIEW).", FAINT);
+        pixelText(x0 + 14.f, y0 + 98.f, "DRONE: THIS OND HOLDS THE ROOT (AND FIFTH) OF THE KEYS PLAYED IN THE OTHER ONDS.", FAINT);
+        pixelText(x0 + 14.f, y0 + 116.f, "BRUDD ON: A BREAKER ON ANY LINKED OND BREAKS THIS ONE TOO, AND IT LANDS WITH THEM.", FAINT);
+        static const char *const KEYS[6] = {"wear", "link_wear", "link_pump", "link_drone", "link_drone_oct", "link_brudd"};
+        const float cw = (w - 28.f) / 6.f, cy = y0 + 236.f;
+        for (int i = 0; i < 6; ++i) {
+            const int p = ond::paramOfKey(KEYS[i]);
+            if (p < 0)
+                continue;
+            const float cx = x0 + 14.f + cw * ((float)i + 0.5f);
+            drawKnob(p, cx, cy, 30.f);
+            hits.push_back({cx - cw / 2.f, cy - 70.f, cw, 140.f, p});
+        }
     }
 
     void drawSection(const Section &s)

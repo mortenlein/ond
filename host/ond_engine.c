@@ -316,6 +316,8 @@ void ond_drum(int lane, int velocity)
         trk_note_on(TDRUM, LANE_NOTE[lane], (uint32_t)(velocity > 127 ? 127 : velocity));
 }
 
+void ond_pump_kick(void) { drums.kick = 1; }   /* (the duck from the next block, as a kick of its own) */
+
 int ond_beat_events(uint8_t *lanes, uint8_t *vels, int max)
 {
     int i, n = (int)beat_nev < max ? (int)beat_nev : max;
@@ -374,6 +376,18 @@ static const param_desc_t TONE_D = {"TONE", F_FILT, -64, 63, 0, 0, 0};
 /* DUST: Clipper's DUST (fx.c dust_run) a second time, on the drums alone (Morten's OK, 2026-10-31): dusty drums
  * under a clean organ; the master DUST still over everything */
 static const param_desc_t BDUST_D = {"DUST", F_PCT, 0, 127, 0, 0, 0};
+/* LINK (Ond 0.19): WEAR adds to DUST (one knob that ages the sound; shared by the linked Onds), and how this Ond hears
+ * the others: their BEAT's kicks pumping it, the notes played into them (a drone following), their breakers */
+static const char *const N_ONOFF2[] = {"OFF", "ON"};
+static const char *const N_FOLLOW[] = {"OFF", "ROOT", "R+5TH"};
+static const char *const N_FOCT[] = {"-2", "-1", "0"};
+static const param_desc_t WEAR_D = {"WEAR", F_PCT, 0, 127, 0, 0, 0};
+static const param_desc_t LWEAR_D = {"SHARE", F_ENUM, 0, 1, 1, N_ONOFF2, 0};
+static const param_desc_t LPUMP_D = {"PUMP", F_ENUM, 0, 1, 0, N_ONOFF2, 0};
+static const param_desc_t LDRONE_D = {"DRONE", F_ENUM, 0, 2, 0, N_FOLLOW, 0};
+static const param_desc_t LDOCT_D = {"OCT", F_ENUM, 0, 2, 1, N_FOCT, 0};
+static const param_desc_t LBRUDD_D = {"BRUDD", F_ENUM, 0, 1, 0, N_ONOFF2, 0};
+static int16_t own_dust;                        /* the DUST knob's own value; DUST heard = it + WEAR */
 static const param_desc_t FILL_D = {"FILL", F_ENUM, 0, 2, 2, N_FILL, 0};
 /* the parts of the kit, each in or out of the groove (Morten: "toggle things out of the loop"): drums.c's lanes */
 static const char *const N_INOUT[] = {"OUT", "IN"};
@@ -395,7 +409,7 @@ static const param_desc_t KIT_D = {"KIT", F_ENUM, DRUM_SAMPLED, DRUM_SAMPLED + D
 static const param_desc_t BLVL_D = {"LEVEL", F_PCT, 0, 127, 100, 0, 0};
 static const param_desc_t CATCH_D = {"CATCH", F_INT, 0, 1000, 0, 0, "ms"};
 static const param_desc_t LAND_D = {"LAND", F_ENUM, 0, 3, 0, N_LAND, 0};
-static int16_t host_val[19];                   /* CATCH, LAND, FEEL, (beat LEVEL: drums.c's own), -, GROOVE, DRUNK,
+static int16_t host_val[25];                   /* CATCH, LAND, FEEL, (beat LEVEL: drums.c's own), -, GROOVE, DRUNK,
                                                 * BARS, FILL, the 7 parts in / out */
 static void beat_load(void) { beat_pattern(host_val[2], host_val[5], host_val[6], host_val[7], host_val[8]); }
 static void beat_refresh(void);
@@ -411,6 +425,10 @@ static void beat_init(void)
     host_val[8] = FILL_D.def;
     host_val[9] = ond_beat_pump = 0;
     host_val[18] = ond_beat_dust = 0;
+    host_val[19] = own_dust = 0;
+    host_val[20] = 1;
+    host_val[21] = host_val[22] = host_val[24] = 0;
+    host_val[23] = 1;
     {
         int k;
         for (k = 0; k < 7; k++)
@@ -491,6 +509,12 @@ static const ctl_t CTL_TAB[] = {
     {"beat_pump", "BEAT", OND_SCOPE_HOST, 9, 1, &PUMP_D},                /* (Ond 0.14) */
     {"beat_tone", "BEAT", OND_SCOPE_HOST, 17, 1, &TONE_D},               /* (Ond 0.15) */
     {"beat_dust", "BEAT", OND_SCOPE_HOST, 18, 1, &BDUST_D},              /* (Ond 0.17) */
+    {"wear", "LINK", OND_SCOPE_HOST, 19, 1, &WEAR_D},                    /* (Ond 0.19) */
+    {"link_wear", "LINK", OND_SCOPE_HOST, 20, 1, &LWEAR_D},
+    {"link_pump", "LINK", OND_SCOPE_HOST, 21, 1, &LPUMP_D},
+    {"link_drone", "LINK", OND_SCOPE_HOST, 22, 1, &LDRONE_D},
+    {"link_drone_oct", "LINK", OND_SCOPE_HOST, 23, 1, &LDOCT_D},
+    {"link_brudd", "LINK", OND_SCOPE_HOST, 24, 1, &LBRUDD_D},
 };
 
 static const param_desc_t *ctl_desc(int c, int engine)
@@ -529,7 +553,10 @@ void ond_control_set(int c, int v)
     k = &CTL_TAB[c];
     d = ctl_desc(c, trk[0].eng_req);
     v = clamp(v, d->min, d->max);
-    if (k->scope == OND_SCOPE_GLOBAL)
+    if (k->scope == OND_SCOPE_GLOBAL && k->id == G_DUST) {   /* (DUST heard: the knob + WEAR) */
+        own_dust = (int16_t)v;
+        song.g[G_DUST] = (int16_t)clamp(v + host_val[19], 0, 127);
+    } else if (k->scope == OND_SCOPE_GLOBAL)
         song.g[k->id] = (int16_t)v;
     else if (k->scope == OND_SCOPE_LAYER)
         trk[1].p[k->id] = (int16_t)v;
@@ -561,6 +588,8 @@ void ond_control_set(int c, int v)
             ond_beat_pump = (int16_t)v;
         if (k->id == 18)
             ond_beat_dust = (int16_t)v;
+        if (k->id == 19)                        /* WEAR: on top of the DUST knob */
+            song.g[G_DUST] = (int16_t)clamp(own_dust + v, 0, 127);
     } else
         trk[0].p[k->scope == OND_SCOPE_EDIT ? P_E0 + k->id : k->id] = (int16_t)v;
 }
@@ -572,7 +601,7 @@ int ond_control_get(int c)
         return 0;
     k = &CTL_TAB[c];
     if (k->scope == OND_SCOPE_GLOBAL)
-        return song.g[k->id];
+        return k->id == G_DUST ? own_dust : song.g[k->id];
     if (k->scope == OND_SCOPE_LAYER)
         return trk[1].p[k->id];
     if (k->scope == OND_SCOPE_HOST)

@@ -41,6 +41,8 @@ void ond_play(int on);                     /* the host stopped: Ond's own transp
 void ond_drum(int lane, int velocity);
 /* the hits BEAT's sequencer played in the last render (not the ones played in): lanes and velocities, for MIDI out */
 int ond_beat_events(uint8_t *lanes, uint8_t *vels, int max);
+/* a kick heard from elsewhere (another Ond's BEAT, LINK): the PUMP ducks as for a kick of its own */
+void ond_pump_kick(void);
 
 /* the controls the plugin shows: the firmware's own parameters, by stable keys (append-only: saved sets keep
  * them). EDIT 1..8 are the engine's own (name, range, value text as the FM-1 shows them for that engine). */

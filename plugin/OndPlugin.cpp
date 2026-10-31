@@ -6,6 +6,7 @@
 // one Ond, and a second one in the process stays silent (gOwner) rather than corrupting the first.
 #include "DistrhoPlugin.hpp"
 #include "OndEngineLoader.hpp"
+#include "OndLink.hpp"
 #include "OndPresets.hpp"
 #include "OndShared.hpp"
 #include "Resampler.hpp"
@@ -33,14 +34,25 @@ public:
             values[i] = p.ranges.def;
             dirty[i] = touched[i] = false;
         }
+        for (int i = 0; i < 6; ++i)
+            linkIdx[i] = ond::paramOfKey(linkKeys[i]);
+        for (int c = 0; c < ond_control_count(); ++c) {
+            ond_control_t info;
+            ond_control_info(c, 0, &info);
+            if (!std::strcmp(info.key, "wear"))
+                wearControl = c;
+        }
         setPads(ond::PadMap::parse(ond::loadPadsText().c_str()));   // the pads learned (every set's, until a
         loadHits();                                                   // set brings its own); the hits
         eng.load();                             // this Ond's own engine (else the plugin's: one Ond only)
+        linkId = ond::LinkHub::get().nextId++;  // LINK: a slot in the set's hub
+        linkSlot = ond::LinkHub::get().claim(linkId);
     }
 
     ~OndPlugin() override
     {
         release();
+        ond::LinkHub::get().release(linkSlot);
         eng.unload();
         delete hitsPending.exchange(nullptr);
         delete hitsRetired.exchange(nullptr);
@@ -56,7 +68,7 @@ protected:
     const char *getMaker() const override { return "Morten Lein"; }
     const char *getHomePage() const override { return "https://github.com/mortenlein/ond"; }
     const char *getLicense() const override { return "GPL-3.0-only"; }
-    uint32_t getVersion() const override { return d_version(0, 18, 0); }
+    uint32_t getVersion() const override { return d_version(0, 19, 0); }
 
     // "preset": the player's preset loaded on the screen (its name; "" a factory sound), kept with the Live set
     // so the screen shows it again. The sound itself is in the parameters.
@@ -193,6 +205,8 @@ protected:
         if (c == -2 || c == -4 || c == -5 || c == -9)
             return;                             // (the outputs: meter, breaker playing, MIDI in, transport)
         values[index] = value;
+        if ((int)index == linkParam("wear"))
+            wearMoved = true;                   // (LINK: a WEAR of this Ond's to share)
         touched[index] = true;                  // set by the host or the screen: not the sound's own any more
         dirty[index] = true;                    // applied on the audio thread, at the next run
     }
@@ -261,6 +275,7 @@ protected:
         }
         values[ond::transportParam()] = (float)transportNow;
         applyParameters();
+        linkBlock(tp, frames);
         takeHits();
         {   // the screen's hit pads (and automation): a hit as the value turns to a slot
             const int h = (int)std::lround(values[ond::hitParam()].load());
@@ -279,6 +294,10 @@ protected:
             for (; done < next; ++done, ++frameNow) {
                 outFrame = done;
                 offsDue(done);
+                while (pumpNext < pumpCount && pumpAt[pumpNext] <= done) {   // LINK: another Ond's kick, here
+                    eng.pump_kick();
+                    ++pumpNext;
+                }
                 if (landLeft > 0 && --landLeft == 0) {   // landed: the groove back
                     landLeft = -1;
                     breakerNow = -1;
@@ -328,7 +347,9 @@ private:
             {"beat_kick", "Beat Kick"}, {"beat_snare", "Beat Snare"}, {"beat_rim", "Beat Rim"},
             {"beat_hats", "Beat Hats"}, {"beat_cymbals", "Beat Cymbals"}, {"beat_toms", "Beat Toms"},
             {"beat_perc", "Beat Perc"}, {"beat_pump", "Beat Pump"}, {"beat_tone", "Beat Tone"},
-            {"beat_dust", "Beat Dust"}};
+            {"beat_dust", "Beat Dust"}, {"wear", "Wear"}, {"link_wear", "Link: Share Wear"},
+            {"link_pump", "Link: Pump"}, {"link_drone", "Link: Drone Follows"}, {"link_drone_oct", "Link: Drone Octave"},
+            {"link_brudd", "Link: Brudd"}};
         for (const auto &n : N)
             if (!std::strcmp(n[0], key))
                 return n[1];
@@ -382,6 +403,13 @@ private:
             return;
         }
         if (b < 0) {
+            if (note && (d1 & 127) >= 32u) {      // (LINK: the keys held here, for an Ond that follows)
+                const uint32_t bit = 1u << (d1 & 31u);
+                if (kind == 0x90u && d2 > 0)
+                    held[(d1 & 127) >> 5] |= bit;
+                else
+                    held[(d1 & 127) >> 5] &= ~bit;
+            }
             eng.midi(st, d1, d2);
             return;
         }
@@ -404,7 +432,23 @@ private:
     void updateBreaker()                        // the pads first, else the parameter (the screen, automation)
     {
         const int param = (int)std::lround(values[ond::breakerParam()].load()) - 1;
-        const int want = padsHeld ? padStack[padsHeld - 1] : param;
+        int want = padsHeld ? padStack[padsHeld - 1] : param;
+        if (linkSlot >= 0 && linkOn("link_brudd")) {   // LINK: this Ond's breaker out, another's in
+            auto &hub = ond::LinkHub::get();
+            auto &me = hub.slot[linkSlot];
+            if (me.breaker.load() != want) {
+                me.breaker = want;
+                if (want >= 0)
+                    me.breakerSeq = hub.seq++;
+            }
+            if (want < 0) {
+                uint32_t best = 0;
+                for (int i = 0; i < ond::LinkHub::SLOTS; ++i)
+                    if (i != linkSlot && hub.slot[i].owner.load() && hub.slot[i].breaker.load() >= 0 &&
+                        hub.slot[i].breakerSeq.load() >= best)
+                        best = hub.slot[i].breakerSeq, want = hub.slot[i].breaker;
+            }
+        }
         if (want == breakerNow) {
             landLeft = -1;                      // (pressed again while landing: it stays)
             return;
@@ -507,6 +551,113 @@ private:
                 sendNote(frame, 0x80, (uint8_t)(ond::NOTE_DRUMS + l), 0);
     }
 
+    // ---- LINK (OndLink.hpp): what this Ond tells the others, what it takes from them, once a run
+    int linkParam(const char *key) const
+    {
+        for (int i = 0; i < 8; ++i)
+            if (linkKeys[i] && !std::strcmp(linkKeys[i], key))
+                return linkIdx[i];
+        return -1;
+    }
+    bool linkOn(const char *key) const
+    {
+        const int p = linkParam(key);
+        return p >= 0 && values[p].load() >= 0.5f;
+    }
+    void linkBlock(const TimePosition &tp, uint32_t frames)
+    {
+        pumpCount = pumpNext = 0;
+        if (linkSlot < 0)
+            return;
+        auto &hub = ond::LinkHub::get();
+        auto &me = hub.slot[linkSlot];
+        for (int w = 0; w < 4; ++w)             // the keys held here
+            me.notes[w] = held[w];
+        static const char *const BK[12] = {"beat_feel", "beat_groove", "beat_drunk", "beat_bars", "beat_fill",
+                                           "beat_kick", "beat_snare", "beat_rim", "beat_hats", "beat_cymbals",
+                                           "beat_toms", "beat_perc"};
+        int feel = 0;
+        for (int i = 0; i < 12; ++i) {          // this Ond's BEAT, for the others to work out its kicks
+            const int p = ond::paramOfKey(BK[i]);
+            const int v = p >= 0 ? (int)std::lround(values[p].load()) : 0;
+            me.beat[i] = v;
+            if (!i)
+                feel = v;
+        }
+        me.beatOn = feel > 0 && transportNow == 1;
+        // WEAR: shared, the latest moved wins
+        if (linkOn("link_wear")) {
+            const int wp = linkParam("wear");
+            if (wearMoved && wp >= 0) {
+                hub.wear = (int32_t)std::lround(values[wp].load());
+                wearSeen = hub.wearSeq = hub.seq++;
+            } else if (hub.wearSeq.load() != wearSeen) {
+                wearSeen = hub.wearSeq;
+                eng.control_set(wearControl, hub.wear);
+            }
+        }
+        wearMoved = false;
+        // PUMP: another Ond's BEAT's kicks in this block, from its settings and Live's position
+        if (linkOn("link_pump") && transportNow == 1 && tp.bbt.valid && tp.bbt.ticksPerBeat > 0.0) {
+            const double bpm = tp.bbt.beatsPerMinute, sr = getSampleRate();
+            const double b0 = (double)(tp.bbt.bar - 1) * tp.bbt.beatsPerBar + (tp.bbt.beat - 1) +
+                              tp.bbt.tick / tp.bbt.ticksPerBeat;
+            const double b1 = b0 + (double)frames / sr * bpm / 60.0;
+            for (int i = 0; i < ond::LinkHub::SLOTS && pumpCount < 32; ++i) {
+                if (i == linkSlot || !hub.slot[i].owner.load() || !hub.slot[i].beatOn.load())
+                    continue;
+                int v[12];
+                for (int k = 0; k < 12; ++k)
+                    v[k] = hub.slot[i].beat[k];
+                for (int bar = (int)(b0 / 4.0); bar <= (int)(b1 / 4.0); ++bar) {
+                    uint8_t vel[16][16];
+                    int8_t micro[16];
+                    if (!ond_beat_bar(v, bar, vel, micro))
+                        break;
+                    for (int s = 0; s < 16 && pumpCount < 32; ++s) {
+                        if (!vel[s][0] && !vel[s][1])
+                            continue;
+                        const double t = bar * 4.0 + (s + micro[s] / 64.0) / 4.0;
+                        if (t >= b0 && t < b1)
+                            pumpAt[pumpCount++] = (uint32_t)((t - b0) * 60.0 / bpm * sr);
+                    }
+                }
+            }
+            std::sort(pumpAt, pumpAt + pumpCount);
+        }
+        // DRONE: the root (and fifth) of the keys held in the other Onds, in this Ond
+        int want[2] = {-1, -1};
+        const int mode = linkParam("link_drone") >= 0 ? (int)std::lround(values[linkParam("link_drone")].load()) : 0;
+        if (mode > 0) {
+            int low = 128;
+            for (int i = 0; i < ond::LinkHub::SLOTS; ++i)
+                if (i != linkSlot && hub.slot[i].owner.load())
+                    for (int w = 0; w < 4; ++w) {
+                        const uint32_t m = hub.slot[i].notes[w];
+                        for (int b = 0; b < 32 && m; ++b)
+                            if ((m >> b) & 1u && w * 32 + b < low)
+                                low = w * 32 + b;
+                    }
+            if (low < 128) {
+                const int op = linkParam("link_drone_oct");
+                const int shift = ((op >= 0 ? (int)std::lround(values[op].load()) : 1) - 2) * 12;
+                want[0] = std::max(0, low + shift);
+                if (mode == 2)
+                    want[1] = std::min(127, want[0] + 7);
+            }
+        }
+        for (int k = 0; k < 2; ++k)              // what changed: off, then on
+            if (droneNow[k] >= 0 && droneNow[k] != want[0] && droneNow[k] != want[1]) {
+                eng.midi(0x80, (uint8_t)droneNow[k], 0);
+                droneNow[k] = -1;
+            }
+        for (int k = 0; k < 2; ++k)
+            if (want[k] >= 0 && droneNow[0] != want[k] && droneNow[1] != want[k]) {
+                eng.midi(0x90, (uint8_t)want[k], 90);
+                droneNow[droneNow[0] < 0 ? 0 : 1] = want[k];
+            }
+    }
+
     void engineSample(float &l, float &r)
     {
         if (blockPos >= OND_BLOCK) {
@@ -590,6 +741,16 @@ private:
     std::string padsText;
     bool owner = false;
     ond::Engine eng;                             // this Ond's engine (its own copy, else the plugin's)
+    uint32_t linkId = 0;                         // LINK (OndLink.hpp)
+    int linkSlot = -1;
+    uint32_t held[4] = {};                       // the keys held in this Ond (published)
+    int droneNow[2] = {-1, -1};                  // the notes this Ond holds following another
+    uint32_t pumpAt[32] = {}, pumpCount = 0, pumpNext = 0;   // another Ond's kicks in this block (frames)
+    uint32_t wearSeen = 0;
+    bool wearMoved = false;
+    int wearControl = -1;
+    const char *linkKeys[8] = {"wear", "link_wear", "link_pump", "link_drone", "link_drone_oct", "link_brudd"};
+    int linkIdx[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
     String userPreset;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OndPlugin)

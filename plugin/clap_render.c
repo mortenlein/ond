@@ -4,6 +4,8 @@
  * holds C4 E4 G4 from 0.1 s to 9 s (as tools/render_refs.sh), 12 s in all, at RATE, and writes a 16-bit WAV.
  * A second instance is made, activated and run alongside (0.18: an engine of its own: it plays too). second=N gives
  * it SOUND N (else the same), second_out=FILE writes its audio (a check that the two do not touch each other).
+ * 1:NAME=V / 2:NAME=V (after @T: too): a parameter for that instance only; chord=1: the C-E-G to the first only
+ * (LINK's tests: the second hears it through the hub).
  *   clap_render PLUGIN.clap OUT.wav [RATE [SOUND [DUST [NAME=VALUE | @SECONDS:NAME=VALUE ...]]]]
  * (NAME: a parameter's name; @SECONDS: set at that time, e.g. @4.0:Breaker=7 @6.0:Breaker=0)
  * transport=BPM: the host plays from beat 0 at BPM (4/4), as Live's transport; loop=A:B: it loops beats A..B
@@ -93,7 +95,7 @@ int main(int argc, char **argv)
 {
     const char *path = argc > 1 ? argv[1] : "Ond.clap", *out = argc > 2 ? argv[2] : "ond.wav";
     double rate = argc > 3 ? atof(argv[3]) : 48000.0, bpm = 0.0, loop_a = 0.0, loop_b = 0.0, beats = 0.0;
-    int second = -1;
+    int second = -1, chord1 = 0;
     FILE *w2 = NULL;
     clap_event_transport_t tr;
     int sound = argc > 4 ? atoi(argv[4]) : 0, dust = argc > 5 ? atoi(argv[5]) : 0;
@@ -116,6 +118,8 @@ int main(int argc, char **argv)
             midi_log = fopen(argv[a] + 8, "w");
         else if (!strncmp(argv[a], "second=", 7))
             second = atoi(argv[a] + 7);
+        else if (!strcmp(argv[a], "chord=1"))
+            chord1 = 1;
         else if (!strncmp(argv[a], "second_out=", 11) && (w2 = fopen(argv[a] + 11, "wb")))
             fwrite("RIFF....WAVE", 1, 44, w2);   /* (the header's place: written at the end) */
     }
@@ -174,8 +178,13 @@ int main(int argc, char **argv)
                     arg++;
                 }
                 if (!strncmp(arg, "transport=", 10) || !strncmp(arg, "loop=", 5) || !strncmp(arg, "midiout=", 8) ||
-                    !strncmp(arg, "second", 6))
+                    !strncmp(arg, "second", 6) || !strncmp(arg, "chord=", 6))
                     continue;
+                if ((arg[0] == '1' || arg[0] == '2') && arg[1] == ':') {   /* one instance's only */
+                    if ((uint32_t)(arg[0] - '1') != c)
+                        continue;
+                    arg += 2;
+                }
                 if (at < f || at >= f + n || !(eq = strchr(arg, '=')) || eq - arg >= (int)sizeof name)
                     continue;
                 memcpy(name, arg, (size_t)(eq - arg));
@@ -188,10 +197,10 @@ int main(int argc, char **argv)
                 add_param(&el, param_id(pl[c], name), atof(eq + 1));
                 el.ev[el.n - 1].h.time = at - f;
             }
-            if (on >= f && on < f + n)
+            if (on >= f && on < f + n && !(chord1 && c))
                 add_note(&el, on - f, CLAP_EVENT_NOTE_ON, 60), add_note(&el, on - f, CLAP_EVENT_NOTE_ON, 64),
                     add_note(&el, on - f, CLAP_EVENT_NOTE_ON, 67);
-            if (off >= f && off < f + n)
+            if (off >= f && off < f + n && !(chord1 && c))
                 add_note(&el, off - f, CLAP_EVENT_NOTE_OFF, 60), add_note(&el, off - f, CLAP_EVENT_NOTE_OFF, 64),
                     add_note(&el, off - f, CLAP_EVENT_NOTE_OFF, 67);
             pl[c]->process(pl[c], &pr);

@@ -128,3 +128,12 @@ Ond loads a copy of it (`%TEMP%\ond\ond-engine-<pid>-<n>.dll`, deleted when the 
 has its own globals (`plugin/OndEngineLoader.hpp`). The screen's pure calls stay on the plugin's own copy. Where the
 library cannot load: the plugin's own engine, one Ond (as before). Checked: two Onds in one process, CHAPEL and
 SPACE DRONE at once, each the same as its baseline alone (within 1 LSB). No DSP change.
+
+## LINK (2026-10-31, Ond 0.19; Morten: all four, "influence each other and build upon it")
+
+`plugin/OndLink.hpp`: a lock-free hub in the plugin's library (one per process: every Ond of the set). A slot per
+Ond: the keys held in it, its BEAT's settings, its breaker; one WEAR. In each Ond's LINK view: WEAR (adds to DUST) +
+SHARE, PUMP (another Ond's BEAT's kicks duck this one, worked out from its settings and Live's position: sample-exact),
+DRONE (OFF / ROOT / R+5TH, OCT −2..0: this Ond holds the lowest key held in the others, and its fifth), BRUDD (a
+breaker on any linked Ond breaks this one; LAND brings them back together). Checked with two Onds (`refs/016-link`).
+The hub is the place for more: a shared scene, a chord, a key, …

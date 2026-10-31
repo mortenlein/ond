@@ -31,6 +31,7 @@ struct Engine {
     void (*play)(int) = ond_play;
     void (*drum)(int, int) = ond_drum;
     int (*beat_events)(uint8_t *, uint8_t *, int) = ond_beat_events;
+    void (*pump_kick)(void) = ond_pump_kick;
     void (*control_set)(int, int) = ond_control_set;
     void (*breaker)(int) = ond_breaker;
     int (*breaker_playing)(void) = ond_breaker_playing;
@@ -88,7 +89,7 @@ struct Engine {
         const bool ok = get(init, "ond_init") && get(load_preset, "ond_load_preset") && get(load_layer, "ond_load_layer") &&
                         get(midi, "ond_midi") && get(all_notes_off, "ond_all_notes_off") && get(set_tempo, "ond_set_tempo") &&
                         get(tempo, "ond_tempo") && get(transport, "ond_transport") && get(play, "ond_play") &&
-                        get(drum, "ond_drum") && get(beat_events, "ond_beat_events") && get(control_set, "ond_control_set") &&
+                        get(drum, "ond_drum") && get(beat_events, "ond_beat_events") && get(pump_kick, "ond_pump_kick") && get(control_set, "ond_control_set") &&
                         get(breaker, "ond_breaker") && get(breaker_playing, "ond_breaker_playing") && get(hit, "ond_hit") &&
                         get(hit_set, "ond_hit_set") && get(kit_set, "ond_kit_set") && get(render, "ond_render");
         if (!ok) {

@@ -71,6 +71,17 @@ Put WAV files in `Documents\Ond\Kit` named after the lanes: `kick.wav`, `kick2.w
 `shaker.wav`, `conga.wav`, `cowbell.wav`. Each one you add replaces that lane's sound; the rest stay the KIT
 chosen. KIT FOLDER opens the folder, RELOAD picks up changes.
 
+## LINK: Onds that hear each other (0.19)
+
+Every Ond in a set is on one LINK. In an Ond's LINK view:
+
+- **WEAR** adds to its DUST; with **SHARE** on (the default), moving WEAR on any Ond moves every Ond's.
+- **PUMP** on: another Ond's BEAT ducks this one (as deep as this Ond's own PUMP in its BEAT view): put the beat on
+  its own track, the organ and the drone breathe with it.
+- **DRONE** ROOT / R+5TH: this Ond holds the root (and fifth) of the keys played into the other Onds, in OCT. Put a
+  drone sound on it and play only the organ.
+- **BRUDD** on: a breaker on any linked Ond breaks this one too; they come back together.
+
 ## Recording a take
 
 1. Ond's track: input **All Ins** (the Roland and the MPK both), monitor **In** or armed.
