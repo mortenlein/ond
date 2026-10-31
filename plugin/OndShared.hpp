@@ -23,11 +23,11 @@ inline const std::vector<Sound> &sounds()
 {
     static const std::vector<Sound> list = [] {
         static const Sound FIRST[] = {{7, 6}, {7, 13}, {7, 10}, {7, 12}, {12, 18}, {8, 6}, {22, 13}, {18, 5}};
-        static const char *const NEAR[] = {"WHEEL", "STRINGS", "JUNO", "HYBRID", "GRAIN", "VECTOR",
+        static const char *const CLOSE_ENGINES[] = {"WHEEL", "STRINGS", "JUNO", "HYBRID", "GRAIN", "VECTOR",
                                            "TERRAIN", "WAVE", "MACRO", "TRIO", "ANALOG"};
         std::vector<Sound> v(FIRST, FIRST + sizeof FIRST / sizeof FIRST[0]);
         std::vector<int> order;
-        for (const char *name : NEAR)
+        for (const char *name : CLOSE_ENGINES)
             for (int e = 0; e < ond_engine_count(); ++e)
                 if (!std::strcmp(ond_engine_name(e), name))
                     order.push_back(e);

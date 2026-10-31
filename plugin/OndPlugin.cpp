@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Morten Lein
 // Ond as a plugin (DPF: VST3, CLAP): Clipper's DSP from the FM-1 sources (host/ond_engine.c) played by the host's
-// MIDI, at 44.1 kHz, resampled to the host's rate. The firmware keeps its state in globals: one instance plays,
-// a second one in the same process stays silent (gOwner) rather than corrupting the first.
+// MIDI, at 44.1 kHz, resampled to the host's rate. The firmware keeps its state in globals: each Ond loads its own
+// copy of the engine (OndEngineLoader.hpp), any number in a set; where it cannot, the plugin's own engine plays for
+// one Ond, and a second one in the process stays silent (gOwner) rather than corrupting the first.
 #include "DistrhoPlugin.hpp"
+#include "OndEngineLoader.hpp"
 #include "OndPresets.hpp"
 #include "OndShared.hpp"
 #include "Resampler.hpp"
@@ -33,11 +35,13 @@ public:
         }
         setPads(ond::PadMap::parse(ond::loadPadsText().c_str()));   // the pads learned (every set's, until a
         loadHits();                                                   // set brings its own); the hits
+        eng.load();                             // this Ond's own engine (else the plugin's: one Ond only)
     }
 
     ~OndPlugin() override
     {
         release();
+        eng.unload();
         delete hitsPending.exchange(nullptr);
         delete hitsRetired.exchange(nullptr);
         delete hitsLive;
@@ -52,7 +56,7 @@ protected:
     const char *getMaker() const override { return "Morten Lein"; }
     const char *getHomePage() const override { return "https://github.com/mortenlein/ond"; }
     const char *getLicense() const override { return "GPL-3.0-only"; }
-    uint32_t getVersion() const override { return d_version(0, 17, 0); }
+    uint32_t getVersion() const override { return d_version(0, 18, 0); }
 
     // "preset": the player's preset loaded on the screen (its name; "" a factory sound), kept with the Live set
     // so the screen shows it again. The sound itself is in the parameters.
@@ -196,10 +200,10 @@ protected:
     void activate() override
     {
         void *none = nullptr;
-        owner = gOwner.compare_exchange_strong(none, this) || none == this;
+        owner = eng.own || gOwner.compare_exchange_strong(none, this) || none == this;
         if (!owner)
             return;
-        ond_init();                             // the sound, then only what was set over it (a restored set, the
+        eng.init();                             // the sound, then only what was set over it (a restored set, the
         dirty[ond::P_SOUND] = true;             // player's own): an untouched knob keeps the sound's value
         for (int i = 1; i < ond::paramCount(); ++i)
             dirty[i] = touched[i].load();
@@ -207,10 +211,10 @@ protected:
         blockPos = OND_BLOCK;
         if (hitsLive) {                         // (ond_init left the engine's hits: give them back)
             for (int s = 0; s < OND_NHITS; ++s)
-                ond_hit_set(s, hitsLive->l[s].empty() ? nullptr : hitsLive->l[s].data(), hitsLive->r[s].data(),
+                eng.hit_set(s, hitsLive->l[s].empty() ? nullptr : hitsLive->l[s].data(), hitsLive->r[s].data(),
                             (uint32_t)hitsLive->l[s].size());
             for (int k = 0; k < 16; ++k)
-                ond_kit_set(k, hitsLive->kl[k].empty() ? nullptr : hitsLive->kl[k].data(), hitsLive->kr[k].data(),
+                eng.kit_set(k, hitsLive->kl[k].empty() ? nullptr : hitsLive->kl[k].data(), hitsLive->kr[k].data(),
                             (uint32_t)hitsLive->kl[k].size());
         }
         hitNow = 0;
@@ -223,7 +227,7 @@ protected:
     void deactivate() override
     {
         if (owner)
-            ond_all_notes_off();
+            eng.all_notes_off();
         release();
     }
 
@@ -239,20 +243,20 @@ protected:
         }
         const TimePosition &tp = getTimePosition();
         if (tp.bbt.valid)
-            ond_set_tempo(tp.bbt.beatsPerMinute);
+            eng.set_tempo(tp.bbt.beatsPerMinute);
         if (tp.playing && tp.bbt.valid && tp.bbt.ticksPerBeat > 0.0 && tp.bbt.beatsPerMinute > 0.0) {
             // Live's position at this block's first frame, moved on by what Ond has rendered ahead of the output
             // (the engine's block, the resampler's taps): the beat the next sample rendered falls on
             const double beats = (double)(tp.bbt.bar - 1) * tp.bbt.beatsPerBar + (tp.bbt.beat - 1) +
                                  tp.bbt.tick / tp.bbt.ticksPerBeat;
             const double ahead = resampler.ahead() + (double)(OND_BLOCK - blockPos);
-            ond_transport(1, beats + ahead / (double)OND_FS * tp.bbt.beatsPerMinute / 60.0);
+            eng.transport(1, beats + ahead / (double)OND_FS * tp.bbt.beatsPerMinute / 60.0);
             transportNow = 1;
         } else if (values[ond::playParam()].load() >= 0.5f) {
-            ond_play(1);                        // Live stopped, PLAY on: Ond's own time, at Live's tempo
+            eng.play(1);                        // Live stopped, PLAY on: Ond's own time, at Live's tempo
             transportNow = 2;
         } else {
-            ond_transport(0, 0.0);
+            eng.transport(0, 0.0);
             transportNow = 0;
         }
         values[ond::transportParam()] = (float)transportNow;
@@ -261,7 +265,7 @@ protected:
         {   // the screen's hit pads (and automation): a hit as the value turns to a slot
             const int h = (int)std::lround(values[ond::hitParam()].load());
             if (h != hitNow && h > 0)
-                ond_hit(h - 1, 100);
+                eng.hit(h - 1, 100);
             hitNow = h;
         }
         blockStart = frameNow;
@@ -278,7 +282,7 @@ protected:
                 if (landLeft > 0 && --landLeft == 0) {   // landed: the groove back
                     landLeft = -1;
                     breakerNow = -1;
-                    ond_breaker(-1);
+                    eng.breaker(-1);
                 }
                 if (resampler.isBypass()) {
                     engineSample(outL[done], outR[done]);
@@ -297,7 +301,7 @@ protected:
             peak = std::fmax(peak, std::fmax(std::fabs(outL[i]), std::fabs(outR[i])));
         meter = std::fmax(peak, meter * std::pow(0.1f, (float)frames / (float)getSampleRate()));
         values[ond::meterParam()] = meter;
-        values[ond::breakerOutParam()] = (float)(ond_breaker_playing() + 1);
+        values[ond::breakerOutParam()] = (float)(eng.breaker_playing() + 1);
         values[ond::midiInParam()] = (float)midiSeen;
     }
 
@@ -374,16 +378,16 @@ private:
         }
         if (b < 0 && note && !learnedNote[d1 & 127] && (d1 & 127) >= ond::NOTE_DRUMS && (d1 & 127) < ond::NOTE_DRUMS + 16) {
             if (kind == 0x90u && d2 > 0)          // BEAT's drums from a clip (notes 16..31): one-shots
-                ond_drum((d1 & 127) - ond::NOTE_DRUMS, d2);
+                eng.drum((d1 & 127) - ond::NOTE_DRUMS, d2);
             return;
         }
         if (b < 0) {
-            ond_midi(st, d1, d2);
+            eng.midi(st, d1, d2);
             return;
         }
         if (b >= ond::NBREAK) {                  // a hit: on the press, its velocity (a CC: its value)
             if (press)
-                ond_hit(b - ond::NBREAK, d2);
+                eng.hit(b - ond::NBREAK, d2);
             return;
         }
         for (int i = 0; i < padsHeld; ++i)       // (out of the stack wherever it is)
@@ -415,7 +419,7 @@ private:
             pressedAt = frameNow;
         landLeft = -1;
         breakerNow = want;
-        ond_breaker(want);
+        eng.breaker(want);
     }
 
     // frames to the next 1/16, 1/8 or beat (LAND): on Live's grid while its transport runs, else on the grid
@@ -428,7 +432,7 @@ private:
         if (land <= 0 || land > 3)
             return 0;
         const TimePosition &tp = getTimePosition();
-        const double bpm = tp.bbt.valid && tp.bbt.beatsPerMinute > 0.0 ? tp.bbt.beatsPerMinute : ond_tempo();
+        const double bpm = tp.bbt.valid && tp.bbt.beatsPerMinute > 0.0 ? tp.bbt.beatsPerMinute : eng.tempo();
         const double sr = getSampleRate(), div = DIV[land], divFrames = div * 60.0 / bpm * sr;
         double left;
         if (tp.playing && tp.bbt.valid && tp.bbt.ticksPerBeat > 0.0) {
@@ -466,9 +470,9 @@ private:
         if (!b)
             return;
         for (int s = 0; s < OND_NHITS; ++s)
-            ond_hit_set(s, b->l[s].empty() ? nullptr : b->l[s].data(), b->r[s].data(), (uint32_t)b->l[s].size());
+            eng.hit_set(s, b->l[s].empty() ? nullptr : b->l[s].data(), b->r[s].data(), (uint32_t)b->l[s].size());
         for (int k = 0; k < 16; ++k)
-            ond_kit_set(k, b->kl[k].empty() ? nullptr : b->kl[k].data(), b->kr[k].data(), (uint32_t)b->kl[k].size());
+            eng.kit_set(k, b->kl[k].empty() ? nullptr : b->kl[k].data(), b->kr[k].data(), (uint32_t)b->kl[k].size());
         delete hitsRetired.exchange(hitsLive);  // (a set retired twice before a reload: the older freed here, rare)
         hitsLive = b;
     }
@@ -478,7 +482,7 @@ private:
     void beatOut(uint32_t frame)
     {
         uint8_t lanes[64], vels[64];
-        const int n = ond_beat_events(lanes, vels, 64);
+        const int n = eng.beat_events(lanes, vels, 64);
         for (int i = 0; i < n; ++i) {
             const uint8_t note = (uint8_t)(ond::NOTE_DRUMS + lanes[i]);
             if (offLeft[lanes[i]] > 0)
@@ -506,7 +510,7 @@ private:
     void engineSample(float &l, float &r)
     {
         if (blockPos >= OND_BLOCK) {
-            ond_render(blockL, blockR, OND_BLOCK);
+            eng.render(blockL, blockR, OND_BLOCK);
             beatOut(outFrame);
             blockPos = 0;
         }
@@ -524,7 +528,7 @@ private:
             const auto &list = ond::sounds();
             const size_t i = (size_t)(int)values[ond::P_SOUND];
             current = list[i < list.size() ? i : 0];
-            ond_load_preset(current.engine, current.preset);
+            eng.load_preset(current.engine, current.preset);
             for (int p = 1; p < n; ++p) {
                 ond_control_t info;
                 const int c = ond::paramControls()[p];
@@ -543,7 +547,7 @@ private:
             const auto &list = ond::sounds();
             const size_t i = (size_t)(int)values[ond::layerSoundParam()];
             const ond::Sound &s = list[i < list.size() ? i : 0];
-            ond_load_layer(s.engine, s.preset);
+            eng.load_layer(s.engine, s.preset);
         }
         for (int p = 1; p < n; ++p) {
             const int c = ond::paramControls()[p];
@@ -552,14 +556,14 @@ private:
             ond_control_t info;
             ond_control_info(c, current.engine, &info);
             const float v = values[p];
-            ond_control_set(c, info.scope == OND_SCOPE_EDIT ? ond::editValue(v, info) : (int)std::lround(v));
+            eng.control_set(c, info.scope == OND_SCOPE_EDIT ? ond::editValue(v, info) : (int)std::lround(v));
         }
     }
 
     void release()
     {
         void *self = this;
-        if (owner)
+        if (owner && !eng.own)
             gOwner.compare_exchange_strong(self, nullptr);
         owner = false;
     }
@@ -585,6 +589,7 @@ private:
     std::atomic<bool> padsLearned{false};
     std::string padsText;
     bool owner = false;
+    ond::Engine eng;                             // this Ond's engine (its own copy, else the plugin's)
     String userPreset;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OndPlugin)

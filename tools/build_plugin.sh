@@ -23,5 +23,5 @@ cmake -S plugin -B "$B" -DCMAKE_TOOLCHAIN_FILE="$PWD/plugin/mingw-toolchain.cmak
 cmake --build "$B" -j"$(nproc)"
 rm -rf build/plugin/bin
 mkdir -p build/plugin/bin
-cp -r "$B/bin/Ond.vst3" "$B/bin/Ond.clap" "$B/bin/Ond.exe" build/plugin/bin/
+cp -r "$B/bin/Ond.vst3" "$B/bin/Ond.clap" "$B/bin/Ond.exe" "$B/bin/ond-engine.dll" build/plugin/bin/
 echo "build/plugin/bin: $(ls build/plugin/bin | tr '\n' ' ')"

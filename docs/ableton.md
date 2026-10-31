@@ -85,5 +85,6 @@ While Live plays, Ond runs on Live's grid: the arp, the breakers' loops, LAND, t
 
 ## Limits (docs/tasks/014-ableton-midi.md)
 
-- One Ond per set for now (a second stays silent).
+- Any number of Onds per set (0.18): each has its own engine. They all follow Live's transport, so they are in
+  time with each other.
 - Bounces of one clip differ in their details (free-running phases, as two takes on the instrument).

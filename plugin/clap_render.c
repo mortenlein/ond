@@ -2,7 +2,8 @@
  * Copyright (C) 2026 Morten Lein */
 /* A minimal CLAP host for testing the built plugin on Windows, without a DAW: loads Ond.clap, sets SOUND and DUST,
  * holds C4 E4 G4 from 0.1 s to 9 s (as tools/render_refs.sh), 12 s in all, at RATE, and writes a 16-bit WAV.
- * A second instance is made, activated and run alongside: it must stay silent (one engine per process).
+ * A second instance is made, activated and run alongside (0.18: an engine of its own: it plays too). second=N gives
+ * it SOUND N (else the same), second_out=FILE writes its audio (a check that the two do not touch each other).
  *   clap_render PLUGIN.clap OUT.wav [RATE [SOUND [DUST [NAME=VALUE | @SECONDS:NAME=VALUE ...]]]]
  * (NAME: a parameter's name; @SECONDS: set at that time, e.g. @4.0:Breaker=7 @6.0:Breaker=0)
  * transport=BPM: the host plays from beat 0 at BPM (4/4), as Live's transport; loop=A:B: it loops beats A..B
@@ -92,6 +93,8 @@ int main(int argc, char **argv)
 {
     const char *path = argc > 1 ? argv[1] : "Ond.clap", *out = argc > 2 ? argv[2] : "ond.wav";
     double rate = argc > 3 ? atof(argv[3]) : 48000.0, bpm = 0.0, loop_a = 0.0, loop_b = 0.0, beats = 0.0;
+    int second = -1;
+    FILE *w2 = NULL;
     clap_event_transport_t tr;
     int sound = argc > 4 ? atoi(argv[4]) : 0, dust = argc > 5 ? atoi(argv[5]) : 0;
     uint32_t frames = (uint32_t)(12.0 * rate), on = (uint32_t)(0.1 * rate), off = (uint32_t)(9.0 * rate), f, i, c;
@@ -111,6 +114,10 @@ int main(int argc, char **argv)
             sscanf(argv[a] + 5, "%lf:%lf", &loop_a, &loop_b);
         else if (!strncmp(argv[a], "midiout=", 8))
             midi_log = fopen(argv[a] + 8, "w");
+        else if (!strncmp(argv[a], "second=", 7))
+            second = atoi(argv[a] + 7);
+        else if (!strncmp(argv[a], "second_out=", 11) && (w2 = fopen(argv[a] + 11, "wb")))
+            fwrite("RIFF....WAVE", 1, 44, w2);   /* (the header's place: written at the end) */
     }
     if (!entry || !entry->init(path)) {
         fprintf(stderr, "cannot load %s\n", path);
@@ -153,7 +160,7 @@ int main(int argc, char **argv)
                 pr.transport = &tr;
             }
             if (!f) {
-                add_param(&el, param_id(pl[c], "Sound"), sound);
+                add_param(&el, param_id(pl[c], "Sound"), c == 1u && second >= 0 ? second : sound);
                 add_param(&el, param_id(pl[c], "Dust"), dust);
             }
             for (int a = 6; a < argc && el.n < MAXEV - 6u; a++) {
@@ -166,7 +173,8 @@ int main(int argc, char **argv)
                         continue;
                     arg++;
                 }
-                if (!strncmp(arg, "transport=", 10) || !strncmp(arg, "loop=", 5) || !strncmp(arg, "midiout=", 8))
+                if (!strncmp(arg, "transport=", 10) || !strncmp(arg, "loop=", 5) || !strncmp(arg, "midiout=", 8) ||
+                    !strncmp(arg, "second", 6))
                     continue;
                 if (at < f || at >= f + n || !(eq = strchr(arg, '=')) || eq - arg >= (int)sizeof name)
                     continue;
@@ -203,17 +211,36 @@ int main(int argc, char **argv)
             }
             sum += (double)buf[0][0][i] * buf[0][0][i];
             fwrite(s, 2, 2, w);
+            if (w2) {
+                int16_t s2[2];
+                for (c = 0; c < 2u; c++) {
+                    float x = buf[1][c][i];
+                    s2[c] = (int16_t)lrintf((x > 1.f ? 1.f : x < -1.f ? -1.f : x) * 32767.f);
+                }
+                fwrite(s2, 2, 2, w2);
+            }
         }
     }
     fclose(w);
+    if (w2) {                                   /* (its header: the first's, the same shape) */
+        FILE *h = fopen(out, "rb");
+        unsigned char hdr[44];
+        if (h && fread(hdr, 1, 44, h) == 44) {
+            fseek(w2, 0, SEEK_SET);
+            fwrite(hdr, 1, 44, w2);
+        }
+        if (h)
+            fclose(h);
+        fclose(w2);
+    }
     for (c = 0; c < 2u; c++) {
         pl[c]->stop_processing(pl[c]);
         pl[c]->deactivate(pl[c]);
         pl[c]->destroy(pl[c]);
     }
     entry->deinit();
-    printf("%s at %.0f Hz, sound %d, dust %d: peak %.1f dBFS, rms %.1f dBFS; second instance peak %s\n", out, rate,
+    printf("%s at %.0f Hz, sound %d, dust %d: peak %.1f dBFS, rms %.1f dBFS; second instance peak %.1f dBFS\n", out, rate,
            sound, dust, 20 * log10(peak + 1e-12), 10 * log10(sum / frames + 1e-24),
-           peak2 == 0.0 ? "silent (ok)" : "NOT SILENT");
-    return peak > 0.001 && peak2 == 0.0 ? 0 : 2;
+           20 * log10(peak2 + 1e-12));
+    return peak > 0.001 ? 0 : 2;
 }

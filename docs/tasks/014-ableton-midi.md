@@ -120,3 +120,11 @@ out: BEAT's hits leave Ond as MIDI, 60 ms notes, at the frame they played). Reco
 From: Ond), then the clip plays the same drums back (FEEL OFF): checked by round trip outside Live (level equal,
 residual -19 dB under the music: sub-millisecond timing). PLAY in BEAT: Ond's own time with Live stopped.
 To check in Live: a VST3's MIDI out in "MIDI From". Recipe in docs/ableton.md.
+
+## Step 5 (2026-10-31, Ond 0.18): more than one Ond per set
+
+The engine is a library of its own (`ond-engine.dll`, in the VST3 bundle and beside the CLAP and Ond.exe); each
+Ond loads a copy of it (`%TEMP%\ond\ond-engine-<pid>-<n>.dll`, deleted when the Ond goes; leftovers swept), so each
+has its own globals (`plugin/OndEngineLoader.hpp`). The screen's pure calls stay on the plugin's own copy. Where the
+library cannot load: the plugin's own engine, one Ond (as before). Checked: two Onds in one process, CHAPEL and
+SPACE DRONE at once, each the same as its baseline alone (within 1 LSB). No DSP change.

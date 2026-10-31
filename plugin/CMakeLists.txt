@@ -42,7 +42,22 @@ target_include_directories(Ond PUBLIC
 # the firmware's sources as they are (their own warnings are the FM-1 build's business)
 set_source_files_properties(${OND_ROOT}/host/ond_engine.c PROPERTIES COMPILE_OPTIONS "-w;-O2")
 
+# (0.18) the engine as a library of its own: each Ond loads a copy (OndEngineLoader.hpp), its own globals, so any
+# number of Onds play in one Live set. Next to each binary: in the VST3 bundle, beside the CLAP and Ond.exe
+add_library(ond-engine SHARED ${OND_ROOT}/host/ond_engine.c)
+set_target_properties(ond-engine PROPERTIES PREFIX "" OUTPUT_NAME "ond-engine"
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+target_include_directories(ond-engine PRIVATE ${OND_ROOT}/host ${OND_ROOT}/build/gen ${OND_ROOT}/firmware/src
+  ${OND_ROOT}/firmware/hal)
+target_compile_options(ond-engine PRIVATE -w -O2)
+foreach(t Ond-vst3 Ond-clap Ond-jack)
+  add_dependencies(${t} ond-engine)
+endforeach()
+add_custom_command(TARGET Ond-vst3 POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:ond-engine> $<TARGET_FILE_DIR:Ond-vst3>/)
+
 if(WIN32)
+  target_link_options(ond-engine PRIVATE -static)
   # one self-contained DLL: no libc++ / libunwind DLLs beside it for Live to look for
   target_link_options(Ond-vst3 PRIVATE -static)
   target_link_options(Ond-clap PRIVATE -static)
