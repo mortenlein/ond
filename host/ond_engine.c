@@ -189,6 +189,26 @@ void ond_all_notes_off(void)
         trk_note_off(&trk[0], n);
 }
 
+void ond_transport(int playing, double beats)
+{
+    uint32_t b, pos;
+    if (!playing) {
+        if (song.playing)
+            seq_stop();                         /* (as the FM-1's STOP: the sequencer's and the arp's notes end) */
+        return;
+    }
+    if (beats < 0.0)
+        beats = 0.0;
+    b = (uint32_t)beats;
+    pos = (uint32_t)((beats - (double)b) * (double)BEAT_U);
+    if (pos >= BEAT_U)
+        pos = BEAT_U - 1u;
+    if (!song.playing)
+        seq_reset_tracks(pos);                  /* PLAY: every track from here, as a MIDI START does */
+    clk_beat = b;                               /* the host's position every block: no drift (its tempo has a */
+    clk_pos = pos;                              /* fraction, Clipper's BPM none), a jump or a loop followed */
+}
+
 void ond_set_tempo(double bpm)
 {
     if (bpm > 0.0)

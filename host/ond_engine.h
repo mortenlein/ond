@@ -30,6 +30,11 @@ const char *ond_preset_name(int engine, int preset);
 void ond_midi(uint8_t status, uint8_t d1, uint8_t d2);
 void ond_all_notes_off(void);
 void ond_set_tempo(double bpm);            /* the host's tempo: the arp, a synced delay */
+/* the host's transport, before each render: playing, and where the next sample rendered sits in beats from the
+ * host's start (a quarter note a beat). The firmware's own transport follows (seq.c: PLAY and STOP as the FM-1's,
+ * the position into clk_beat / clk_pos): the arp, the sequencer, the MOD SEQ, the breakers' loops and DUST's
+ * record-noise run on the host's grid. Stopped: Ond keeps its own time, as before */
+void ond_transport(int playing, double beats);
 
 /* the controls the plugin shows: the firmware's own parameters, by stable keys (append-only: saved sets keep
  * them). EDIT 1..8 are the engine's own (name, range, value text as the FM-1 shows them for that engine). */

@@ -38,6 +38,9 @@ public:
 
     bool isBypass() const { return bypass; }
 
+    // input samples pushed beyond the next output's place (the engine's time ahead of the output's)
+    double ahead() const { return bypass ? 0.0 : (double)(written - (HALF - 1)) - pos; }
+
     // input samples still to be pushed before the next output can be read
     bool needsInput() const { return (int64_t)pos + TAPS > written; }
 

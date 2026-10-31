@@ -228,6 +228,16 @@ protected:
         const TimePosition &tp = getTimePosition();
         if (tp.bbt.valid)
             ond_set_tempo(tp.bbt.beatsPerMinute);
+        if (tp.playing && tp.bbt.valid && tp.bbt.ticksPerBeat > 0.0 && tp.bbt.beatsPerMinute > 0.0) {
+            // Live's position at this block's first frame, moved on by what Ond has rendered ahead of the output
+            // (the engine's block, the resampler's taps): the beat the next sample rendered falls on
+            const double beats = (double)(tp.bbt.bar - 1) * tp.bbt.beatsPerBar + (tp.bbt.beat - 1) +
+                                 tp.bbt.tick / tp.bbt.ticksPerBeat;
+            const double ahead = resampler.ahead() + (double)(OND_BLOCK - blockPos);
+            ond_transport(1, beats + ahead / (double)OND_FS * tp.bbt.beatsPerMinute / 60.0);
+        } else {
+            ond_transport(0, 0.0);
+        }
         applyParameters();
         takeHits();
         {   // the screen's hit pads (and automation): a hit as the value turns to a slot

@@ -4,7 +4,8 @@
  * holds C4 E4 G4 from 0.1 s to 9 s (as tools/render_refs.sh), 12 s in all, at RATE, and writes a 16-bit WAV.
  * A second instance is made, activated and run alongside: it must stay silent (one engine per process).
  *   clap_render PLUGIN.clap OUT.wav [RATE [SOUND [DUST [NAME=VALUE | @SECONDS:NAME=VALUE ...]]]]
- * (NAME: a parameter's name; @SECONDS: set at that time, e.g. @4.0:Breaker=7 @6.0:Breaker=0) */
+ * (NAME: a parameter's name; @SECONDS: set at that time, e.g. @4.0:Breaker=7 @6.0:Breaker=0)
+ * transport=BPM: the host plays from beat 0 at BPM (4/4), as Live's transport; loop=A:B: it loops beats A..B */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,6 +16,7 @@
 #include "plugin-factory.h"
 #include "host.h"
 #include "process.h"
+#include "fixedpoint.h"
 
 #define BLOCK 512u
 #define MAXEV 64u
@@ -71,7 +73,8 @@ static clap_id param_id(const clap_plugin_t *pl, const char *name)
 int main(int argc, char **argv)
 {
     const char *path = argc > 1 ? argv[1] : "Ond.clap", *out = argc > 2 ? argv[2] : "ond.wav";
-    double rate = argc > 3 ? atof(argv[3]) : 48000.0;
+    double rate = argc > 3 ? atof(argv[3]) : 48000.0, bpm = 0.0, loop_a = 0.0, loop_b = 0.0, beats = 0.0;
+    clap_event_transport_t tr;
     int sound = argc > 4 ? atoi(argv[4]) : 0, dust = argc > 5 ? atoi(argv[5]) : 0;
     uint32_t frames = (uint32_t)(12.0 * rate), on = (uint32_t)(0.1 * rate), off = (uint32_t)(9.0 * rate), f, i, c;
     HMODULE dll = LoadLibraryA(path);
@@ -83,6 +86,12 @@ int main(int argc, char **argv)
     FILE *w;
     uint32_t v32, data = frames * 4u;
     uint16_t v16;
+    for (int a = 6; a < argc; a++) {
+        if (!strncmp(argv[a], "transport=", 10))
+            bpm = atof(argv[a] + 10);
+        else if (!strncmp(argv[a], "loop=", 5))
+            sscanf(argv[a] + 5, "%lf:%lf", &loop_a, &loop_b);
+    }
     if (!entry || !entry->init(path)) {
         fprintf(stderr, "cannot load %s\n", path);
         return 1;
@@ -110,6 +119,18 @@ int main(int argc, char **argv)
             clap_output_events_t outev = {NULL, out_push};
             clap_audio_buffer_t ob = {chan[c], NULL, 2, 0, 0};
             clap_process_t pr = {(int64_t)f, n, NULL, NULL, &ob, 0, 1, &in, &outev};
+            if (bpm > 0.0) {                    /* the host's transport at this block's first frame */
+                memset(&tr, 0, sizeof tr);
+                tr.header.size = sizeof tr, tr.header.type = CLAP_EVENT_TRANSPORT;
+                tr.flags = CLAP_TRANSPORT_HAS_TEMPO | CLAP_TRANSPORT_HAS_BEATS_TIMELINE |
+                           CLAP_TRANSPORT_HAS_TIME_SIGNATURE | CLAP_TRANSPORT_IS_PLAYING;
+                tr.song_pos_beats = (clap_beattime)llround(beats * (double)CLAP_BEATTIME_FACTOR);
+                tr.tempo = bpm;
+                tr.bar_number = (int32_t)(beats / 4.0);
+                tr.bar_start = (clap_beattime)llround((double)tr.bar_number * 4.0 * (double)CLAP_BEATTIME_FACTOR);
+                tr.tsig_num = 4, tr.tsig_denom = 4;
+                pr.transport = &tr;
+            }
             if (!f) {
                 add_param(&el, param_id(pl[c], "Sound"), sound);
                 add_param(&el, param_id(pl[c], "Dust"), dust);
@@ -124,6 +145,8 @@ int main(int argc, char **argv)
                         continue;
                     arg++;
                 }
+                if (!strncmp(arg, "transport=", 10) || !strncmp(arg, "loop=", 5))
+                    continue;
                 if (at < f || at >= f + n || !(eq = strchr(arg, '=')) || eq - arg >= (int)sizeof name)
                     continue;
                 memcpy(name, arg, (size_t)(eq - arg));
@@ -138,6 +161,11 @@ int main(int argc, char **argv)
                 add_note(&el, off - f, CLAP_EVENT_NOTE_OFF, 60), add_note(&el, off - f, CLAP_EVENT_NOTE_OFF, 64),
                     add_note(&el, off - f, CLAP_EVENT_NOTE_OFF, 67);
             pl[c]->process(pl[c], &pr);
+        }
+        if (bpm > 0.0) {                        /* the host's clock: on, round the loop */
+            beats += (double)n / rate * bpm / 60.0;
+            if (loop_b > loop_a && beats >= loop_b)
+                beats = loop_a + (beats - loop_b);
         }
         for (i = 0; i < n; i++) {
             int16_t s[2];
