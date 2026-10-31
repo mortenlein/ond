@@ -66,7 +66,7 @@ struct Hit {
                                    // -22 the BRUDD view, -4000-i breaker i's pad, -23 LEARN; -24 the LAYER
                                    // view, -25/-26 the layer's previous / next sound, -27 its browser;
                                    // -5000-k hit k's pad, -28 the hits' folder, -29 RELOAD them; -32 the BEAT
-                                   // view, -33 NEW (another groove of the feel)
+                                   // view, -33 NEW (another groove of the feel), -34 PLAY
 };
 
 } // namespace
@@ -184,6 +184,8 @@ protected:
                 saveAs();
             } else if (h.param == -33) {
                 newGroove();
+            } else if (h.param == -34) {
+                setValue(ond::playParam(), vals[(size_t)ond::playParam()] >= 0.5f ? 0.f : 1.f);
             } else if (h.param == -22 || h.param == -24 || h.param == -32) {
                 const int v = h.param == -22 ? 1 : h.param == -24 ? 2 : 3;
                 view = view == v ? 0 : v;
@@ -679,7 +681,7 @@ private:
         const float db = m > 1e-5f ? 20.f * std::log10(m) : -100.f, k = std::fmax(0.f, std::fmin(1.f, (db + 60.f) / 60.f));
         if (k > 0.f)
             fill(bx + 4.f, by + bh - 3.f, (bw - 8.f) * k, 2.f, db > -6.f ? ACCENT : TEXT, db > -6.f ? 1.f : 0.5f, 1.f);
-        pixelText(24.f, 60.f, "0.9", FAINT);
+        pixelText(24.f, 60.f, "0.10", FAINT);
         if (renaming)
             pixelText(bx + bw, by + bh + 6.f, "TYPE A NAME, ENTER", FAINT, 1.f, 1);
     }
@@ -850,7 +852,16 @@ private:
         const float x0 = 16.f, y0 = 336.f, w = 968.f, h = 348.f;
         fill(x0, y0, w, h, PANEL, 1.f, 6.f);
         pixelText(x0 + 14.f, y0 + 10.f, "BEAT", DIM);
-        pixelText(x0 + w - 14.f, y0 + 10.f, "REAL DRUMMERS' GROOVES. PLAYS WHILE LIVE PLAYS", FAINT, 1.f, 1);
+        {   // where its time comes from: Live's PLAY, or its own
+            const int tr = (int)std::lround(vals[(size_t)ond::transportParam()]);
+            const bool own = vals[(size_t)ond::playParam()] >= 0.5f;
+            const char *st = !beatOn() ? "FEEL OFF: NEW PICKS ONE"
+                             : tr == 1 ? "PLAYING WITH LIVE"
+                             : tr == 2 ? "PLAYING (LIVE STOPPED: OND'S OWN TIME)"
+                                       : "WAITING: PRESS PLAY HERE OR IN LIVE";
+            pixelText(x0 + w - 14.f, y0 + 10.f, st, tr && beatOn() ? ACCENT : DIM, 1.f, 1);
+            button(x0 + w - 14.f - 250.f, y0 + 40.f, 120.f, 34.f, own ? "STOP" : "PLAY", own, -34);
+        }
         const ond_groove_t *g = grooveNow();
         char info[96];
         if (g)
@@ -869,6 +880,7 @@ private:
             drawKnob(p, cx, cy, 30.f);
             hits.push_back({cx - cw / 2.f, cy - 70.f, cw, 140.f, p});
         }
+        pixelText(x0 + 14.f, y0 + h - 44.f, "OUT AS MIDI NOTES 16-31: RECORD THEM ON A TRACK, 'MIDI FROM: OND'. A CLIP'S 16-31 PLAY THE KIT.", FAINT);
         pixelText(x0 + 14.f, y0 + h - 26.f, "GROOVE MIDI DATASET (GOOGLE MAGENTA, CC BY 4.0). KITS: SLOOP'S.", FAINT);
     }
 

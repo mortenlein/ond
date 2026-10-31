@@ -38,6 +38,18 @@ static uint32_t cpu1_ticks(void) { return 0; }
 #include "../firmware/src/params.c"
 #include "../firmware/src/voice.c"
 #include "../firmware/src/slicer.c"
+/* ---- BEAT's hits as they play (seq.c drum_step: the sequencer's, never the ones played in), for the host's MIDI
+ * out: lane and velocity, per render */
+static struct { uint8_t lane, vel; } beat_ev[64];
+static uint32_t beat_nev;
+static void ond_beat_out(uint32_t lane, uint32_t vel)
+{
+    if (beat_nev < 64u) {
+        beat_ev[beat_nev].lane = (uint8_t)lane;
+        beat_ev[beat_nev].vel = (uint8_t)(vel > 127u ? 127u : vel);
+        beat_nev++;
+    }
+}
 /* ---- Brudd's hits (ond_engine.h): per slot the voice playing and the one fading out under a retrigger */
 static struct {
     const float *l, *r;
@@ -244,6 +256,31 @@ void ond_transport(int playing, double beats)
         seq_reset_tracks(pos);                  /* PLAY: every track from here, as a MIDI START does */
     clk_beat = b;                               /* the host's position every block: no drift (its tempo has a */
     clk_pos = pos;                              /* fraction, Clipper's BPM none), a jump or a loop followed */
+}
+
+void ond_play(int on)                           /* Ond's own transport, the host stopped (BEAT's PLAY) */
+{
+    if (on && !song.playing) {
+        seq_reset_tracks(0);                    /* from the top, at the engine's tempo (the host's last) */
+        clk_beat = 0;
+    } else if (!on && song.playing) {
+        seq_stop();
+    }
+}
+
+void ond_drum(int lane, int velocity)
+{
+    if (lane >= 0 && lane < DRUM_LANES && velocity > 0)
+        trk_note_on(TDRUM, LANE_NOTE[lane], (uint32_t)(velocity > 127 ? 127 : velocity));
+}
+
+int ond_beat_events(uint8_t *lanes, uint8_t *vels, int max)
+{
+    int i, n = (int)beat_nev < max ? (int)beat_nev : max;
+    for (i = 0; i < n; i++)
+        lanes[i] = beat_ev[i].lane, vels[i] = beat_ev[i].vel;
+    beat_nev = 0;
+    return n;
 }
 
 void ond_set_tempo(double bpm)

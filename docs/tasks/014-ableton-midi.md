@@ -112,3 +112,11 @@ samples, where the `Breaker` parameter, applied per host block, can be 221 early
 CHAPEL playing, then only `Sound` set (as a clip envelope does) to SOFT FLUTE / STRING ORG / REED ORGAN: the next
 chord is that sound as loaded whole (spectrum 1.000 / 0.995 / 0.999, level within 0.2 dB). (SPACE DRONE cannot be
 compared this way: its vector moves at random, by design.)
+
+## Coupling (2026-10-31, Ond 0.10): everything Ond makes up can become a clip
+
+Morten: "how can we more tightly couple it?" Ond's notes both ways: 0–15 Brudd (in), 16–31 BEAT's drums (in, and
+out: BEAT's hits leave Ond as MIDI, 60 ms notes, at the frame they played). Record them on a second track (MIDI
+From: Ond), then the clip plays the same drums back (FEEL OFF): checked by round trip outside Live (level equal,
+residual -19 dB under the music: sub-millisecond timing). PLAY in BEAT: Ond's own time with Live stopped.
+To check in Live: a VST3's MIDI out in "MIDI From". Recipe in docs/ableton.md.

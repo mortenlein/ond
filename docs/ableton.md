@@ -1,6 +1,6 @@
 # Ond in Ableton Live
 
-## Brudd's notes (Ond 0.8)
+## Ond's low notes: Brudd (0.8) and BEAT's drums (0.10)
 
 Ond answers these notes on any channel, out of the box (no LEARN). They are below every keyboard (an 88-key starts
 at A0 = 21), so the Roland never plays them, and in a clip the pads are rows of their own at the bottom of the
@@ -24,6 +24,7 @@ piano roll. LEARN in the BRUDD view still takes any note or CC over them.
 | C#-1 | 13 | REVERSE |
 | D-1 | 14 | LOOP 4: a beat held (freeze) |
 | D#-1 | 15 | ECHO |
+| E-1 … G-0 | 16–31 | BEAT's drums: 16 kick, 17 kick 2, 18 snare, 19 clap, 20 hat, 21 open hat, 22 pedal hat, 23 rim, 24 snare 2, 25 low tom, 26 high tom, 27 crash, 28 ride, 29 shaker, 30 conga, 31 cowbell (the kit chosen in BEAT) |
 
 A hit plays on the note-on, its velocity the level. A breaker holds while the note does (in a clip: the note's
 length), then lets go with CATCH and LAND as set in the BRUDD view.
@@ -38,6 +39,25 @@ and select it:
 
 The channel does not matter (Live hands Ond everything on channel 1). Keep the pads on notes, not CCs: notes record
 into a clip as rhythm you can edit.
+
+## A beat into a clip (Ond 0.10)
+
+BEAT sends what it plays out of Ond as MIDI notes 16–31, and notes 16–31 coming in play the same drums. So a beat
+Ond made up becomes an ordinary Live clip:
+
+1. In Ond's BEAT view: NEW until you like it.
+2. A second MIDI track: **MIDI From: (Ond's track) → Ond**, Monitor **Off**, armed.
+3. Play Live and record 2, 4 or 8 bars on that track. The beat is now a clip: notes 16–31 in the piano roll.
+4. In Ond: FEEL **OFF**. Move (or copy) the clip onto Ond's own track: it plays Ond's drums, as recorded — edit
+   it as you like.
+
+(Checked outside Live: the notes Ond sends, played back in, give the same beat within a millisecond.)
+
+**First time, check in Live** (Ond cannot see this from inside): does the second track's "MIDI From" list show
+Ond, and does recording put notes 16–31 in the clip? If not, tell Claude what the list shows.
+
+BEAT's PLAY (in its view) runs the beat with Live stopped, on Ond's own time at Live's tempo; Live's play always
+takes over. The status line says which.
 
 ## Recording a take
 

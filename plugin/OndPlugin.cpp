@@ -52,7 +52,7 @@ protected:
     const char *getMaker() const override { return "Morten Lein"; }
     const char *getHomePage() const override { return "https://github.com/mortenlein/ond"; }
     const char *getLicense() const override { return "GPL-3.0-only"; }
-    uint32_t getVersion() const override { return d_version(0, 9, 0); }
+    uint32_t getVersion() const override { return d_version(0, 10, 0); }
 
     // "preset": the player's preset loaded on the screen (its name; "" a factory sound), kept with the Live set
     // so the screen shows it again. The sound itself is in the parameters.
@@ -104,6 +104,14 @@ protected:
                 p.enumValues.restrictedMode = true;
                 p.enumValues.values = ev;
             }
+            return;
+        }
+        if (c == -8 || c == -9) {
+            p.hints = c == -8 ? kParameterIsAutomatable | kParameterIsInteger | kParameterIsBoolean
+                              : kParameterIsOutput | kParameterIsInteger;
+            p.name = c == -8 ? "Play" : "Transport";
+            p.symbol = c == -8 ? "play" : "transport";
+            p.ranges.min = 0.f, p.ranges.max = c == -8 ? 1.f : 2.f, p.ranges.def = 0.f;
             return;
         }
         if (c == -7) {
@@ -178,8 +186,8 @@ protected:
         if (index >= (uint32_t)ond::paramCount())
             return;
         const int c = ond::paramControls()[index];
-        if (c == -2 || c == -4 || c == -5)
-            return;                             // (the outputs: meter, breaker playing, MIDI in)
+        if (c == -2 || c == -4 || c == -5 || c == -9)
+            return;                             // (the outputs: meter, breaker playing, MIDI in, transport)
         values[index] = value;
         touched[index] = true;                  // set by the host or the screen: not the sound's own any more
         dirty[index] = true;                    // applied on the audio thread, at the next run
@@ -235,9 +243,15 @@ protected:
                                  tp.bbt.tick / tp.bbt.ticksPerBeat;
             const double ahead = resampler.ahead() + (double)(OND_BLOCK - blockPos);
             ond_transport(1, beats + ahead / (double)OND_FS * tp.bbt.beatsPerMinute / 60.0);
+            transportNow = 1;
+        } else if (values[ond::playParam()].load() >= 0.5f) {
+            ond_play(1);                        // Live stopped, PLAY on: Ond's own time, at Live's tempo
+            transportNow = 2;
         } else {
             ond_transport(0, 0.0);
+            transportNow = 0;
         }
+        values[ond::transportParam()] = (float)transportNow;
         applyParameters();
         takeHits();
         {   // the screen's hit pads (and automation): a hit as the value turns to a slot
@@ -255,6 +269,8 @@ protected:
             updateBreaker();
             const uint32_t next = e < evCount && ev[e].frame < frames ? ev[e].frame : frames;
             for (; done < next; ++done, ++frameNow) {
+                outFrame = done;
+                offsDue(done);
                 if (landLeft > 0 && --landLeft == 0) {   // landed: the groove back
                     landLeft = -1;
                     breakerNow = -1;
@@ -348,6 +364,11 @@ private:
             else
                 return;                          // (channel 10: Brudd's, never the organ)
         }
+        if (b < 0 && note && !learnedNote[d1 & 127] && (d1 & 127) >= ond::NOTE_DRUMS && (d1 & 127) < ond::NOTE_DRUMS + 16) {
+            if (kind == 0x90u && d2 > 0)          // BEAT's drums from a clip (notes 16..31): one-shots
+                ond_drum((d1 & 127) - ond::NOTE_DRUMS, d2);
+            return;
+        }
         if (b < 0) {
             ond_midi(st, d1, d2);
             return;
@@ -439,10 +460,41 @@ private:
         hitsLive = b;
     }
 
+    // BEAT's hits out as notes 16..31 (a 16th's worth of note: something a clip shows and plays back), at the frame
+    // the engine played them; note-offs the same way
+    void beatOut(uint32_t frame)
+    {
+        uint8_t lanes[64], vels[64];
+        const int n = ond_beat_events(lanes, vels, 64);
+        for (int i = 0; i < n; ++i) {
+            const uint8_t note = (uint8_t)(ond::NOTE_DRUMS + lanes[i]);
+            if (offLeft[lanes[i]] > 0)
+                sendNote(frame, 0x80, note, 0);  // (again before its off: that one first)
+            sendNote(frame, 0x90, note, vels[i]);
+            offLeft[lanes[i]] = (int32_t)(getSampleRate() * 0.06);
+        }
+    }
+    void sendNote(uint32_t frame, uint8_t st, uint8_t note, uint8_t vel)
+    {
+        MidiEvent ev;
+        ev.frame = frame;
+        ev.size = 3;
+        ev.data[0] = st, ev.data[1] = note, ev.data[2] = vel;
+        ev.dataExt = nullptr;
+        writeMidiEvent(ev);
+    }
+    void offsDue(uint32_t frame)                // (once a frame: the note-offs that fall due)
+    {
+        for (int l = 0; l < 16; ++l)
+            if (offLeft[l] > 0 && --offLeft[l] == 0)
+                sendNote(frame, 0x80, (uint8_t)(ond::NOTE_DRUMS + l), 0);
+    }
+
     void engineSample(float &l, float &r)
     {
         if (blockPos >= OND_BLOCK) {
             ond_render(blockL, blockR, OND_BLOCK);
+            beatOut(outFrame);
             blockPos = 0;
         }
         l = blockL[blockPos];
@@ -509,6 +561,9 @@ private:
     float meter = 0.f;
     int padStack[ond::NBREAK] = {}, padsHeld = 0, breakerNow = -1, midiSeen = 0;
     int64_t frameNow = 0, blockStart = 0, pressedAt = 0, landLeft = -1;   // (LAND: output frames)
+    uint32_t outFrame = 0;                       // (the frame being made: BEAT's MIDI out's time)
+    int32_t offLeft[16] = {};                    // (frames to each drum note's off)
+    int transportNow = 0;
     std::atomic<HitBank *> hitsPending{nullptr}, hitsRetired{nullptr};
     HitBank *hitsLive = nullptr;
     int hitNow = 0;

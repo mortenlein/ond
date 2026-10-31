@@ -93,6 +93,8 @@ inline const std::vector<int> &paramControls()  // parameter index -> control in
         }
         if (find("beat_feel") < 0)
             m.push_back(-7);
+        m.push_back(-8);                        // (0.10) PLAY: Ond's own transport, Live stopped
+        m.push_back(-9);                        // (0.10) the transport's state (out)
         return m;
     }();
     return map;
@@ -131,6 +133,8 @@ inline int breakerOutParam() { return paramOfCode(-4); }
 inline int midiInParam() { return paramOfCode(-5); }
 inline int layerSoundParam() { return paramOfCode(-6); }
 inline int hitParam() { return paramOfCode(-7); }   // (0.7) a hit from the screen: 1..8 while its pad is held
+inline int playParam() { return paramOfCode(-8); }  // (0.10) Ond's own PLAY (Live stopped)
+inline int transportParam() { return paramOfCode(-9); }   // (out) 0 stopped, 1 Live plays, 2 Ond's own PLAY
 inline constexpr int LAYER_SOUND_DEF = 4;   // sounds()[4]: HYBRID DRONE, as ond_init's layer
 
 // the MPK Mini's pads on channel 10 (docs/controller-mpk-mini.md): bank A (notes 36..43) the hits (Brudd stage 2),
@@ -144,6 +148,7 @@ inline constexpr int PAD_B[8] = {4, 6, 13, 11, 7, 5, 0, 14};
 // The MPK's pads set to them (its editor) record into a Live clip as plain notes, rows of their own; LEARN still
 // takes a note or CC over them
 inline constexpr int NOTE_HITS = 0, NOTE_BREAKERS = 8;
+inline constexpr int NOTE_DRUMS = 16;           // (0.10) notes 16..31: BEAT's 16 drum lanes, in and out
 inline int defaultPadOf(int note)          // the hit (NBREAK + k) or breaker a note is by default, -1 none
 {
     if (note >= NOTE_HITS && note < NOTE_HITS + 8)

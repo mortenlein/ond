@@ -41,7 +41,24 @@ static const clap_event_header_t *ev_get(const clap_input_events_t *l, uint32_t 
 {
     return &((const evlist_t *)l->ctx)->ev[i].h;
 }
-static bool out_push(const clap_output_events_t *l, const clap_event_header_t *e) { (void)l; (void)e; return true; }
+static FILE *midi_log;                          /* midiout=FILE: the plugin's MIDI out, "seconds note velocity" */
+static uint64_t block_frame;
+static double log_rate;
+static bool out_push(const clap_output_events_t *l, const clap_event_header_t *e)
+{
+    (void)l;
+    if (midi_log && l->ctx == (void *)1) {      /* (the first instance's only) */
+        if (e->type == CLAP_EVENT_MIDI) {
+            const clap_event_midi_t *m = (const clap_event_midi_t *)e;
+            if ((m->data[0] & 0xF0) == 0x90 && m->data[2])
+                fprintf(midi_log, "%.6f %d %d\n", (double)(block_frame + e->time) / log_rate, m->data[1], m->data[2]);
+        } else if (e->type == CLAP_EVENT_NOTE_ON) {
+            const clap_event_note_t *n = (const clap_event_note_t *)e;
+            fprintf(midi_log, "%.6f %d %d\n", (double)(block_frame + e->time) / log_rate, n->key, (int)(n->velocity * 127.0 + 0.5));
+        }
+    }
+    return true;
+}
 
 static void add_note(evlist_t *l, uint32_t t, uint16_t type, int16_t key)
 {
@@ -92,6 +109,8 @@ int main(int argc, char **argv)
             bpm = atof(argv[a] + 10);
         else if (!strncmp(argv[a], "loop=", 5))
             sscanf(argv[a] + 5, "%lf:%lf", &loop_a, &loop_b);
+        else if (!strncmp(argv[a], "midiout=", 8))
+            midi_log = fopen(argv[a] + 8, "w");
     }
     if (!entry || !entry->init(path)) {
         fprintf(stderr, "cannot load %s\n", path);
@@ -117,7 +136,8 @@ int main(int argc, char **argv)
         for (c = 0; c < 2u; c++) {
             evlist_t el = {0};
             clap_input_events_t in = {&el, ev_size, ev_get};
-            clap_output_events_t outev = {NULL, out_push};
+            clap_output_events_t outev = {(void *)(uintptr_t)(c + 1u), out_push};
+            block_frame = f, log_rate = rate;
             clap_audio_buffer_t ob = {chan[c], NULL, 2, 0, 0};
             clap_process_t pr = {(int64_t)f, n, NULL, NULL, &ob, 0, 1, &in, &outev};
             if (bpm > 0.0) {                    /* the host's transport at this block's first frame */
@@ -146,7 +166,7 @@ int main(int argc, char **argv)
                         continue;
                     arg++;
                 }
-                if (!strncmp(arg, "transport=", 10) || !strncmp(arg, "loop=", 5))
+                if (!strncmp(arg, "transport=", 10) || !strncmp(arg, "loop=", 5) || !strncmp(arg, "midiout=", 8))
                     continue;
                 if (at < f || at >= f + n || !(eq = strchr(arg, '=')) || eq - arg >= (int)sizeof name)
                     continue;

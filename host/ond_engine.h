@@ -35,6 +35,12 @@ void ond_set_tempo(double bpm);            /* the host's tempo: the arp, a synce
  * the position into clk_beat / clk_pos): the arp, the sequencer, the MOD SEQ, the breakers' loops and DUST's
  * record-noise run on the host's grid. Stopped: Ond keeps its own time, as before */
 void ond_transport(int playing, double beats);
+void ond_play(int on);                     /* the host stopped: Ond's own transport (BEAT's PLAY), from the top */
+/* BEAT's drum lanes (16: kick, kick 2, snare, clap, hat, open hat, pedal, rim, snare 2, low tom, high tom, crash, ride,
+ * shaker, conga, cowbell: drums.c LANE_NAME), played in (a clip's notes) */
+void ond_drum(int lane, int velocity);
+/* the hits BEAT's sequencer played in the last render (not the ones played in): lanes and velocities, for MIDI out */
+int ond_beat_events(uint8_t *lanes, uint8_t *vels, int max);
 
 /* the controls the plugin shows: the firmware's own parameters, by stable keys (append-only: saved sets keep
  * them). EDIT 1..8 are the engine's own (name, range, value text as the FM-1 shows them for that engine). */

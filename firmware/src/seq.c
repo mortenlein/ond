@@ -2829,6 +2829,9 @@ static void drum_step(track_t *t, const dstep_t *s, uint32_t skip)
         if (m & 1u) {
             trk_note_on(t, LANE_NOTE[l], lvl_vel(dstep_lvl(s, l), 100));
             seq_out_on(t, LANE_NOTE[l], lvl_vel(dstep_lvl(s, l), 100));
+#if OND_BEAT
+            ond_beat_out(l, lvl_vel(dstep_lvl(s, l), 100));   /* (Ond: BEAT's hits, out as MIDI to the host) */
+#endif
         }
 }
 
@@ -2851,6 +2854,9 @@ static void seq_ratchets(track_t *t, uint32_t into, uint32_t slen)
                 t->rat_lanes = (t->rat_lanes & ~(3u << (2u * i))) | h << (2u * i);
                 trk_note_on(t, LANE_NOTE[i], lvl_vel(dstep_lvl(s, i), 100));
                 seq_out_on(t, LANE_NOTE[i], lvl_vel(dstep_lvl(s, i), 100));
+#if OND_BEAT
+                ond_beat_out(i, lvl_vel(dstep_lvl(s, i), 100));
+#endif
             }
         }
         return;
