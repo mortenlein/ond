@@ -100,3 +100,10 @@ Not SPICE (it skips whole steps: kick and snare too). The drummers' own playing 
 the groove locks, and a fill bar from the fill recordings (`tools/gen_grooves.py`). The drum track holds two bars;
 the next is written into the half not playing, a bar ahead (`beat_schedule`). BARS (2 / 8, default 8), FILL
 (OFF / 4 / 8, default 8).
+
+## Parts in / out (2026-10-31, Ond 0.12; Morten: "toggle things out of the loop, hihat or cymbals")
+
+KICK, SNARE (snare, clap, snare 2), RIM, HATS (closed, open, pedal), CYMBALS (crash, ride), TOMS, PERC (shaker,
+conga, cowbell): each a parameter (Live can automate it), IN by default, a row of switches in the BEAT view. A part
+out leaves its lanes empty from the next step (both bars written again); MIDI out sends only what plays. Checked
+through the plugin's MIDI out: HATS out removes the 45 hats and nothing else; out at 4 s, back at 8 s.

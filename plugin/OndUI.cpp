@@ -66,7 +66,7 @@ struct Hit {
                                    // -22 the BRUDD view, -4000-i breaker i's pad, -23 LEARN; -24 the LAYER
                                    // view, -25/-26 the layer's previous / next sound, -27 its browser;
                                    // -5000-k hit k's pad, -28 the hits' folder, -29 RELOAD them; -32 the BEAT
-                                   // view, -33 NEW (another groove of the feel), -34 PLAY
+                                   // view, -33 NEW (another groove of the feel), -34 PLAY, -6000-k part k in / out
 };
 
 } // namespace
@@ -184,6 +184,12 @@ protected:
                 saveAs();
             } else if (h.param == -33) {
                 newGroove();
+            } else if (h.param <= -6000 && h.param > -7000) {   // a part of the kit in / out of the groove
+                const int p = ond::paramOfKey(PART_KEYS[-6000 - h.param]);
+                if (p >= 0) {
+                    setValue(p, vals[(size_t)p] >= 0.5f ? 0.f : 1.f);
+                    touch();
+                }
             } else if (h.param == -34) {
                 setValue(ond::playParam(), vals[(size_t)ond::playParam()] >= 0.5f ? 0.f : 1.f);
             } else if (h.param == -22 || h.param == -24 || h.param == -32) {
@@ -681,7 +687,7 @@ private:
         const float db = m > 1e-5f ? 20.f * std::log10(m) : -100.f, k = std::fmax(0.f, std::fmin(1.f, (db + 60.f) / 60.f));
         if (k > 0.f)
             fill(bx + 4.f, by + bh - 3.f, (bw - 8.f) * k, 2.f, db > -6.f ? ACCENT : TEXT, db > -6.f ? 1.f : 0.5f, 1.f);
-        pixelText(24.f, 60.f, "0.11", FAINT);
+        pixelText(24.f, 60.f, "0.12", FAINT);
         if (renaming)
             pixelText(bx + bw, by + bh + 6.f, "TYPE A NAME, ENTER", FAINT, 1.f, 1);
     }
@@ -804,6 +810,10 @@ private:
         }
     }
 
+    static constexpr const char *PART_KEYS[7] = {"beat_kick", "beat_snare", "beat_rim", "beat_hats", "beat_cymbals",
+                                                 "beat_toms", "beat_perc"};
+    static constexpr const char *PART_NAMES[7] = {"KICK", "SNARE", "RIM", "HATS", "CYMBALS", "TOMS", "PERC"};
+
     // BEAT (task 015): a drummer's groove (ond_grooves.h) on SLOOP's kits, while Live plays
     bool beatOn() const
     {
@@ -873,7 +883,16 @@ private:
         button(x0 + w - 14.f - 120.f, y0 + 40.f, 120.f, 34.f, "NEW", false, -33);
         static const char *const KEYS[] = {"beat_feel", "beat_groove", "beat_bars", "beat_fill", "beat_drunk",
                                            "beat_kit", "beat_level"};
-        const float cw = (w - 28.f) / 7.f, cy = y0 + 220.f;
+        {   // the parts of the kit: lit in the groove, dark out of it
+            const float gap = 8.f, by = y0 + 96.f, bw = (w - 28.f - 136.f - 6.f * gap) / 7.f;   // (all seven inside)
+            pixelText(x0 + 14.f, by + 8.f, "IN THE GROOVE:", DIM);
+            for (int k = 0; k < 7; ++k) {
+                const int p = ond::paramOfKey(PART_KEYS[k]);
+                const bool in = p >= 0 && vals[(size_t)p] >= 0.5f;
+                button(x0 + 150.f + (bw + gap) * (float)k, by, bw, 32.f, PART_NAMES[k], in, -6000 - k);   // (to x0 + w - 14)
+            }
+        }
+        const float cw = (w - 28.f) / 7.f, cy = y0 + 236.f;
         for (int i = 0; i < 7; ++i) {
             const int p = ond::paramOfKey(KEYS[i]);
             if (p < 0)

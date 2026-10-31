@@ -151,6 +151,7 @@ static void layer_into(uint32_t e, uint32_t pi)
  * finds it written) */
 static void beat_init(void);
 static const ond_groove_t *beat_g;              /* the groove (0: off) */
+static uint16_t beat_out_lanes;
 static int32_t beat_drunk_now = 100, beat_nbars = 2, beat_fill_every;
 static int32_t beat_half[2] = {-1, -1};         /* the bar each half holds */
 static void beat_write(uint32_t half, int32_t bar)
@@ -168,7 +169,7 @@ static void beat_write(uint32_t half, int32_t bar)
         int32_t m = (src[i].micro * beat_drunk_now + (src[i].micro >= 0 ? 50 : -50)) / 100;
         memset(&t->dstep[k], 0, sizeof t->dstep[k]);
         for (l = 0; l < DRUM_LANES; l++)
-            if ((src[i].on >> l) & 1u)
+            if ((src[i].on >> l) & 1u && !((beat_out_lanes >> l) & 1u))
                 dstep_set(&t->dstep[k], l, (src[i].lvl >> (2u * l)) & 3u, 0);
         t->micro[k] = (int8_t)(m < MICRO_MIN ? MICRO_MIN : m > MICRO_MAX ? MICRO_MAX : m);
     }
@@ -182,6 +183,11 @@ static void beat_schedule(void)                 /* each block, before the sequen
         bar = (int32_t)((clk_beat * 4u + clk_pos / (BEAT_U / 4u)) / 16u);
     beat_write((uint32_t)bar & 1u, bar);
     beat_write((uint32_t)(bar + 1) & 1u, bar + 1);
+}
+static void beat_refresh(void)                  /* the bars in place written again (a part in / out) */
+{
+    beat_half[0] = beat_half[1] = -1;
+    beat_schedule();
 }
 static void beat_pattern(int feel, int groove, int drunk, int bars, int fill)
 {
@@ -358,14 +364,30 @@ static const char *const N_BARS[] = {"2", "8"};
 static const char *const N_FILL[] = {"OFF", "4", "8"};
 static const param_desc_t BARS_D = {"BARS", F_ENUM, 0, 1, 1, N_BARS, 0};
 static const param_desc_t FILL_D = {"FILL", F_ENUM, 0, 2, 2, N_FILL, 0};
+/* the parts of the kit, each in or out of the groove (Morten: "toggle things out of the loop"): drums.c's lanes */
+static const char *const N_INOUT[] = {"OUT", "IN"};
+static const param_desc_t PART_D[7] = {{"KICK", F_ENUM, 0, 1, 1, N_INOUT, 0},  {"SNARE", F_ENUM, 0, 1, 1, N_INOUT, 0},
+                                       {"RIM", F_ENUM, 0, 1, 1, N_INOUT, 0},   {"HATS", F_ENUM, 0, 1, 1, N_INOUT, 0},
+                                       {"CYMBL", F_ENUM, 0, 1, 1, N_INOUT, 0}, {"TOMS", F_ENUM, 0, 1, 1, N_INOUT, 0},
+                                       {"PERC", F_ENUM, 0, 1, 1, N_INOUT, 0}};
+static const uint16_t PART_LANES[7] = {
+    1u << 0 | 1u << 1,                          /* kick, kick 2 */
+    1u << 2 | 1u << 3 | 1u << 8,                /* snare, clap, snare 2 */
+    1u << 7,                                    /* rim */
+    1u << 4 | 1u << 5 | 1u << 6,                /* hat, open hat, pedal */
+    1u << 11 | 1u << 12,                        /* crash, ride */
+    1u << 9 | 1u << 10,                         /* toms */
+    1u << 13 | 1u << 14 | 1u << 15};           /* shaker, conga, cowbell */
+static uint16_t beat_out_lanes;                 /* the lanes taken out (beat_write leaves them empty) */
 static const param_desc_t KIT_D = {"KIT", F_ENUM, DRUM_SAMPLED, DRUM_SAMPLED + DS_NKITS - 1, DRUM_SAMPLED + 8,
                                    DRUM_KIT_NAMES + DRUM_SAMPLED, 0};   /* (param_format: names from the minimum) */   /* (the 32 synthesised kits; LO-FI first) */
 static const param_desc_t BLVL_D = {"LEVEL", F_PCT, 0, 127, 100, 0, 0};
 static const param_desc_t CATCH_D = {"CATCH", F_INT, 0, 1000, 0, 0, "ms"};
 static const param_desc_t LAND_D = {"LAND", F_ENUM, 0, 3, 0, N_LAND, 0};
-static int16_t host_val[10];                   /* CATCH, LAND, FEEL, (beat LEVEL: drums.c's own), -, GROOVE, DRUNK,
-                                                * BARS, FILL */
+static int16_t host_val[17];                   /* CATCH, LAND, FEEL, (beat LEVEL: drums.c's own), -, GROOVE, DRUNK,
+                                                * BARS, FILL, the 7 parts in / out */
 static void beat_load(void) { beat_pattern(host_val[2], host_val[5], host_val[6], host_val[7], host_val[8]); }
+static void beat_refresh(void);
 static void beat_init(void)
 {
     TDRUM->p[P_E0] = (int16_t)KIT_D.def;
@@ -376,6 +398,12 @@ static void beat_init(void)
     host_val[6] = 100;
     host_val[7] = BARS_D.def;
     host_val[8] = FILL_D.def;
+    {
+        int k;
+        for (k = 0; k < 7; k++)
+            host_val[10 + k] = 1;
+        beat_out_lanes = 0;
+    }
     beat_load();
 }
 static const ctl_t CTL_TAB[] = {
@@ -440,6 +468,13 @@ static const ctl_t CTL_TAB[] = {
     {"beat_drunk", "BEAT", OND_SCOPE_HOST, 6, 1, &DRUNK_D},
     {"beat_bars", "BEAT", OND_SCOPE_HOST, 7, 1, &BARS_D},                /* (Ond 0.11) */
     {"beat_fill", "BEAT", OND_SCOPE_HOST, 8, 1, &FILL_D},
+    {"beat_kick", "BEAT", OND_SCOPE_HOST, 10, 1, &PART_D[0]},           /* (Ond 0.12) the parts in / out */
+    {"beat_snare", "BEAT", OND_SCOPE_HOST, 11, 1, &PART_D[1]},
+    {"beat_rim", "BEAT", OND_SCOPE_HOST, 12, 1, &PART_D[2]},
+    {"beat_hats", "BEAT", OND_SCOPE_HOST, 13, 1, &PART_D[3]},
+    {"beat_cymbals", "BEAT", OND_SCOPE_HOST, 14, 1, &PART_D[4]},
+    {"beat_toms", "BEAT", OND_SCOPE_HOST, 15, 1, &PART_D[5]},
+    {"beat_perc", "BEAT", OND_SCOPE_HOST, 16, 1, &PART_D[6]},
 };
 
 static const param_desc_t *ctl_desc(int c, int engine)
@@ -492,6 +527,14 @@ void ond_control_set(int c, int v)
             ond_breaker_catch(v);
         if (k->id == 2 || k->id == 5 || k->id == 6 || k->id == 7 || k->id == 8)
             beat_load();                        /* FEEL, GROOVE, DRUNK, BARS, FILL: the pattern again */
+        if (k->id >= 10 && k->id <= 16) {       /* a part in or out: from the next step (both bars written again) */
+            int j;
+            beat_out_lanes = 0;
+            for (j = 0; j < 7; j++)
+                if (!host_val[10 + j])
+                    beat_out_lanes |= PART_LANES[j];
+            beat_refresh();
+        }
         if (k->id == 3)
             ond_beat_lvl = (int16_t)v;
     } else
