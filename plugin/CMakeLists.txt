@@ -9,8 +9,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(OND_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 add_subdirectory(${OND_ROOT}/third_party/DPF ${CMAKE_BINARY_DIR}/dpf)
 
+if(EMSCRIPTEN)                                    # (012: the web build: the standalone only, one Ond a page)
+  set(OND_TARGETS jack)
+else()
+  set(OND_TARGETS vst3 clap jack)
+endif()
 dpf_add_plugin(Ond
-  TARGETS vst3 clap jack
+  TARGETS ${OND_TARGETS}
   UI_TYPE opengl
   FORCE_NATIVE_AUDIO_FALLBACK                     # (the standalone Ond.exe: Windows' own audio and MIDI, no JACK)
   FILES_COMMON
@@ -44,6 +49,7 @@ set_source_files_properties(${OND_ROOT}/host/ond_engine.c PROPERTIES COMPILE_OPT
 
 # (0.18) the engine as a library of its own: each Ond loads a copy (OndEngineLoader.hpp), its own globals, so any
 # number of Onds play in one Live set. Next to each binary: in the VST3 bundle, beside the CLAP and Ond.exe
+if(NOT EMSCRIPTEN)                                # (the web: one Ond a page, the plugin's own engine)
 add_library(ond-engine SHARED ${OND_ROOT}/host/ond_engine.c)
 set_target_properties(ond-engine PROPERTIES PREFIX "" OUTPUT_NAME "ond-engine"
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -55,6 +61,7 @@ foreach(t Ond-vst3 Ond-clap Ond-jack)
 endforeach()
 add_custom_command(TARGET Ond-vst3 POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:ond-engine> $<TARGET_FILE_DIR:Ond-vst3>/)
+endif()
 
 if(WIN32)
   target_link_options(ond-engine PRIVATE -static)

@@ -363,6 +363,8 @@ void openHitsFolder()
 {
 #ifdef _WIN32
     ShellExecuteW(nullptr, L"open", hitsDir().wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+#elif defined(__EMSCRIPTEN__)
+    // (the browser: no folders to open; files come and go through the page)
 #elif defined(__APPLE__)
     std::system(("open \"" + hitsDir().u8string() + "\"").c_str());
 #else
@@ -390,6 +392,8 @@ void openPresetFolder()
 {
 #ifdef _WIN32
     ShellExecuteW(nullptr, L"open", presetDir().wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+#elif defined(__EMSCRIPTEN__)
+    // (the browser: no folders to open; files come and go through the page)
 #elif defined(__APPLE__)
     std::system(("open \"" + presetDir().u8string() + "\"").c_str());
 #else
