@@ -25,6 +25,10 @@
 #define DISTRHO_PLUGIN_WANT_TIMEPOS     1
 #define DISTRHO_PLUGIN_WANT_STATE       1
 #define DISTRHO_PLUGIN_WANT_FULL_STATE  1
+/* (0.25) One object in a VST3 host, as CLAP and the web: without it DPF's VST3 is two (the sound and, apart, the
+ * screen's controller), the screen's changes reach the sound only through the host, and in Live the BEAT's parts,
+ * PLAY and STOP did nothing (Morten, 2026-11-01); it also made two Onds of one (LINK counted both). */
+#define DISTRHO_PLUGIN_WANT_DIRECT_ACCESS 1
 #define DISTRHO_PLUGIN_VST3_CATEGORIES  "Instrument|Synth"
 #define DISTRHO_PLUGIN_CLAP_FEATURES    "instrument", "synthesizer", "stereo"
 
