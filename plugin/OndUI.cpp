@@ -6,6 +6,7 @@
 #include "DistrhoUI.hpp"
 #include "OndPresets.hpp"
 #include "OndShared.hpp"
+#include "ond_grooves.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -64,7 +65,8 @@ struct Hit {
                                    // -2000-k my preset k, -3000-k delete it, -30 RENAME, -31 the folder;
                                    // -22 the BRUDD view, -4000-i breaker i's pad, -23 LEARN; -24 the LAYER
                                    // view, -25/-26 the layer's previous / next sound, -27 its browser;
-                                   // -5000-k hit k's pad, -28 the hits' folder, -29 RELOAD them
+                                   // -5000-k hit k's pad, -28 the hits' folder, -29 RELOAD them; -32 the BEAT
+                                   // view, -33 NEW (another groove of the feel)
 };
 
 } // namespace
@@ -130,6 +132,8 @@ protected:
             drawBrudd();
         if (view == 2 && !browserOpen)
             drawLayer();
+        if (view == 3 && !browserOpen)
+            drawBeat();
         restore();
     }
 
@@ -178,8 +182,10 @@ protected:
                 saveCurrent();
             } else if (h.param == -21) {
                 saveAs();
-            } else if (h.param == -22 || h.param == -24) {
-                const int v = h.param == -22 ? 1 : 2;
+            } else if (h.param == -33) {
+                newGroove();
+            } else if (h.param == -22 || h.param == -24 || h.param == -32) {
+                const int v = h.param == -22 ? 1 : h.param == -24 ? 2 : 3;
                 view = view == v ? 0 : v;
                 learning = false, learnArmed = -1;
             } else if (h.param == -25 || h.param == -26) {
@@ -663,16 +669,17 @@ private:
         const float tw = pixelText(bx + 44.f, by + 19.f, name.c_str(), nc, 2.f);
         if (renaming)                      // the cursor
             fill(bx + 44.f + tw + 2.f, by + 19.f, 3.f, 30.f, ACCENT);
-        button(632.f, by, 60.f, bh, "SAVE", !userName.empty() && modified, -20);
-        button(698.f, by, 84.f, bh, "SAVE AS", false, -21);
-        button(788.f, by, 92.f, bh, "LAYER", view == 2 || layerOn(), -24);
-        button(886.f, by, 90.f, bh, "BRUDD", view == 1, -22);
+        button(630.f, by, 56.f, bh, "SAVE", !userName.empty() && modified, -20);
+        button(690.f, by, 76.f, bh, "SAVE AS", false, -21);
+        button(770.f, by, 66.f, bh, "LAYER", view == 2 || layerOn(), -24);
+        button(840.f, by, 66.f, bh, "BRUDD", view == 1, -22);
+        button(910.f, by, 66.f, bh, "BEAT", view == 3 || beatOn(), -32);
         // the output: a line under the name that breathes with the sound
         const float m = vals[(size_t)ond::meterParam()];
         const float db = m > 1e-5f ? 20.f * std::log10(m) : -100.f, k = std::fmax(0.f, std::fmin(1.f, (db + 60.f) / 60.f));
         if (k > 0.f)
             fill(bx + 4.f, by + bh - 3.f, (bw - 8.f) * k, 2.f, db > -6.f ? ACCENT : TEXT, db > -6.f ? 1.f : 0.5f, 1.f);
-        pixelText(24.f, 60.f, "0.8", FAINT);
+        pixelText(24.f, 60.f, "0.9", FAINT);
         if (renaming)
             pixelText(bx + bw, by + bh + 6.f, "TYPE A NAME, ENTER", FAINT, 1.f, 1);
     }
@@ -793,6 +800,76 @@ private:
             drawKnob(p, cx, cy, 30.f);
             hits.push_back({cx - cw / 2.f, cy - 70.f, cw, 140.f, p});
         }
+    }
+
+    // BEAT (task 015): a drummer's groove (ond_grooves.h) on SLOOP's kits, while Live plays
+    bool beatOn() const
+    {
+        const int p = ond::paramOfKey("beat_feel");
+        return p >= 0 && std::lround(vals[(size_t)p]) != 0;
+    }
+    int feelCount(int feel) const
+    {
+        int n = 0;
+        for (int i = 0; i < OND_NGROOVES; ++i)
+            n += OND_GROOVES[i].feel == feel - 1;
+        return n;
+    }
+    const ond_groove_t *grooveNow() const
+    {
+        const int pf = ond::paramOfKey("beat_feel"), pg = ond::paramOfKey("beat_groove");
+        const int feel = pf >= 0 ? (int)std::lround(vals[(size_t)pf]) : 0, n = feelCount(feel);
+        if (feel < 1 || !n || pg < 0)
+            return nullptr;
+        int k = ((int)std::lround(vals[(size_t)pg]) - 1) % n;
+        for (int i = 0; i < OND_NGROOVES; ++i)
+            if (OND_GROOVES[i].feel == feel - 1 && !k--)
+                return &OND_GROOVES[i];
+        return nullptr;
+    }
+    void newGroove()                       // NEW: another of the feel's grooves (a feel off: HIP HOP first)
+    {
+        const int pf = ond::paramOfKey("beat_feel"), pg = ond::paramOfKey("beat_groove");
+        if (pf < 0 || pg < 0)
+            return;
+        int feel = (int)std::lround(vals[(size_t)pf]);
+        if (feel < 1)
+            setValue(pf, (float)(feel = 1));
+        const int n = feelCount(feel), now = (int)std::lround(vals[(size_t)pg]);
+        if (n < 2)
+            return;
+        int g = now;
+        while (g == now)
+            g = 1 + std::rand() % n;
+        setValue(pg, (float)g);
+        touch();
+    }
+
+    void drawBeat()
+    {
+        const float x0 = 16.f, y0 = 336.f, w = 968.f, h = 348.f;
+        fill(x0, y0, w, h, PANEL, 1.f, 6.f);
+        pixelText(x0 + 14.f, y0 + 10.f, "BEAT", DIM);
+        pixelText(x0 + w - 14.f, y0 + 10.f, "REAL DRUMMERS' GROOVES. PLAYS WHILE LIVE PLAYS", FAINT, 1.f, 1);
+        const ond_groove_t *g = grooveNow();
+        char info[96];
+        if (g)
+            std::snprintf(info, sizeof info, "DRUMMER %u, %u BPM (%s)", (unsigned)g->drummer, (unsigned)g->bpm, g->style);
+        else
+            std::snprintf(info, sizeof info, "OFF: PICK A FEEL, OR PRESS NEW");
+        pixelText(x0 + 14.f, y0 + 48.f, info, g ? TEXT : DIM, 1.f);
+        button(x0 + w - 14.f - 120.f, y0 + 40.f, 120.f, 34.f, "NEW", false, -33);
+        static const char *const KEYS[] = {"beat_feel", "beat_groove", "beat_drunk", "beat_kit", "beat_level"};
+        const float cw = (w - 28.f) / 5.f, cy = y0 + 220.f;
+        for (int i = 0; i < 5; ++i) {
+            const int p = ond::paramOfKey(KEYS[i]);
+            if (p < 0)
+                continue;
+            const float cx = x0 + 14.f + cw * ((float)i + 0.5f);
+            drawKnob(p, cx, cy, 30.f);
+            hits.push_back({cx - cw / 2.f, cy - 70.f, cw, 140.f, p});
+        }
+        pixelText(x0 + 14.f, y0 + h - 26.f, "GROOVE MIDI DATASET (GOOGLE MAGENTA, CC BY 4.0). KITS: SLOOP'S.", FAINT);
     }
 
     void drawSection(const Section &s)

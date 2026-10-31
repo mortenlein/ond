@@ -276,13 +276,14 @@ static const char *const N_LAND[] = {"OFF", "1/16", "1/8", "1/4"};
 /* BEAT (task 015): FEEL (OFF, or a style of the drummers': ond_grooves.h), GROOVE (which of that style's), DRUNK (how
  * much of the drummer's own timing: 0 on the grid, 100 as played, more looser still), KIT (the drum track's: SLOOP's
  * synthesised kits; DRUM_KIT_NAMES), LEVEL (its own: drums.c DR_LVL) */
-static const char *const N_FEEL[OND_NFEELS + 1] = {"OFF", "HIP HOP", "FUNK", "SOUL", "JAZZ"};
+static const char *const N_FEEL[OND_NFEELS + 1] = {"OFF", "HIPHP", "FUNK", "SOUL", "JAZZ"};   /* (5 characters: the
+                                                 * FM-1's value text) */
 _Static_assert(OND_NFEELS == 4, "N_FEEL: OND_FEEL_NAMES (tools/gen_grooves.py FEELS)");
 static const param_desc_t FEEL_D = {"FEEL", F_ENUM, 0, OND_NFEELS, 0, N_FEEL, 0};
 static const param_desc_t GROOVE_D = {"GROOV", F_INT, 1, 32, 1, 0, 0};
 static const param_desc_t DRUNK_D = {"DRUNK", F_INT, 0, 200, 100, 0, "%"};
 static const param_desc_t KIT_D = {"KIT", F_ENUM, DRUM_SAMPLED, DRUM_SAMPLED + DS_NKITS - 1, DRUM_SAMPLED + 8,
-                                   DRUM_KIT_NAMES, 0};   /* (the 32 synthesised kits; LO-FI first) */
+                                   DRUM_KIT_NAMES + DRUM_SAMPLED, 0};   /* (param_format: names from the minimum) */   /* (the 32 synthesised kits; LO-FI first) */
 static const param_desc_t BLVL_D = {"LEVEL", F_PCT, 0, 127, 100, 0, 0};
 static const param_desc_t CATCH_D = {"CATCH", F_INT, 0, 1000, 0, 0, "ms"};
 static const param_desc_t LAND_D = {"LAND", F_ENUM, 0, 3, 0, N_LAND, 0};
