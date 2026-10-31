@@ -32,6 +32,20 @@ s = open(p, encoding='utf-8').read()
 s = s.replace('  </body>', open('plugin/web/ond-keys.html', encoding='utf-8').read() + '  </body>', 1)
 open(p, 'w', encoding='utf-8').write(s)
 PYEOF
+# DPF's audio bridge: with no audio inputs (Ond has none) the browser gives no input buffer (null), and its checks
+# read inputBuffer.length: every block threw, no sound. Guarded here (the DPF submodule stays as upstream).
+"$PY" - <<'PYEOF'
+p = 'build/web/Ond.js'
+s = open(p, encoding='utf-8').read()
+n = 0
+for a in ('if(e["inputBuffer"].length!=', 'if(e["inputBuffer"].numberOfChannels!='):
+    n += s.count(a)
+    s = s.replace(a, 'if(e["inputBuffer"])' + a)   # (the whole check inside the guard)
+if n < 2:
+    raise SystemExit('build_web: DPF audio bridge changed, the inputBuffer guard did not apply')
+open(p, 'w', encoding='utf-8').write(s)
+print('audio bridge: %d checks guarded' % n)
+PYEOF
 # each version asks for its own Ond.js / Ond.wasm (the server caches them an hour; Ond.html is never cached)
 V="${OND_WEB_VERSION:-0.$(grep -o 'd_version(0, [0-9]*' plugin/OndPlugin.cpp | grep -o '[0-9]*$')}"
 sed -i "s|\"Ond.js\")|\"Ond.js?v=$V\")|" build/web/Ond.html

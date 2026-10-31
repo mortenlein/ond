@@ -108,7 +108,7 @@
     wake();
     var k = keyAt(e.clientX, e.clientY);
     if (!k) return;
-    kb.setPointerCapture(e.pointerId);
+    try { kb.setPointerCapture(e.pointerId); } catch (x) {}   // (the finger leaving the keys still ends its note)
     held[e.pointerId] = { key: k, msg: press(k) };
   });
   kb.addEventListener('pointermove', function (e) {     // a finger sliding: key to key
