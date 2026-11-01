@@ -224,6 +224,45 @@
       Math.round(buf / rate * 1000) + ' MS · LOAD ' + Math.round(load * 100) + '%';
   }, 500);
 
+  // the computer's keyboard plays, as Live's computer MIDI keyboard: A S D F G H J K L ; ' the white keys from C
+  // (on a Norwegian board A .. Ø Æ), W E T Y U O P the black ones, Z / X the octave (as OCT - / OCT +). By position
+  // (e.code), so any layout; the key bar lights what plays.
+  var TYPED = { KeyA: 0, KeyW: 1, KeyS: 2, KeyE: 3, KeyD: 4, KeyF: 5, KeyT: 6, KeyG: 7, KeyY: 8, KeyH: 9, KeyU: 10,
+                KeyJ: 11, KeyK: 12, KeyO: 13, KeyL: 14, KeyP: 15, Semicolon: 16, Quote: 17 };
+  var typedDown = {};                    // code -> the note it sent (its off matches even after an octave change)
+  function typedKey(n) {                 // the key in the bar for note n, if it shows
+    var i = n - FIRST - 12 * oct;
+    return i >= 0 && i < COUNT ? keys[i] : null;
+  }
+  window.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.code === 'KeyZ' || e.code === 'KeyX') {
+      if (!e.repeat) { oct = Math.max(-3, Math.min(3, oct + (e.code === 'KeyX' ? 1 : -1))); label(); }
+      return;
+    }
+    if (!(e.code in TYPED) || e.repeat || typedDown[e.code] !== undefined) return;
+    wake();
+    var n = 60 + TYPED[e.code] + 12 * oct, k = typedKey(n);
+    typedDown[e.code] = { n: n, k: k };
+    send(0x90, n, 100);
+    if (k && ++k.down === 1) k.el.classList.add('down');
+  }, true);
+  window.addEventListener('keyup', function (e) {
+    var t = typedDown[e.code];
+    if (t === undefined) return;
+    delete typedDown[e.code];
+    send(0x80, t.n, 0);
+    if (t.k && --t.k.down <= 0) { t.k.down = 0; t.k.el.classList.remove('down'); }
+  }, true);
+  window.addEventListener('blur', function () {   // (the window losing focus: every typed note off)
+    Object.keys(typedDown).forEach(function (c) {
+      var t = typedDown[c];
+      send(0x80, t.n, 0);
+      if (t.k && --t.k.down <= 0) { t.k.down = 0; t.k.el.classList.remove('down'); }
+    });
+    typedDown = {};
+  });
+
   // touch on the screen: one finger is the mouse, nothing else. DPF's own touch handling (pugl's wasm.c) listens on
   // the whole window, takes the first finger anywhere (a finger on the keys too) as the click, and holds each tap
   // up to 2 s for a long press: taps landed elsewhere, knobs jumped. So no touch event reaches it (nor the mouse
